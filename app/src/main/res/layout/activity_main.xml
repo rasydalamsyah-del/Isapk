@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Manajer Izin Aplikasi"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"/>
+
+        <Button
+            android:id="@+id/btnRequestRuntime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="1. Minta Izin Pop-Up (Runtime)"/>
+
+        <Button
+            android:id="@+id/btnAccessibility"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="2. Buka Aksesibilitas"/>
+
+        <Button
+            android:id="@+id/btnNotificationListener"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="3. Buka Akses Notifikasi"/>
+
+        <Button
+            android:id="@+id/btnUsageStats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="4. Buka Akses Penggunaan"/>
+
+        <Button
+            android:id="@+id/btnOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="5. Buka Tampil di Atas Aplikasi Lain"/>
+
+        <Button
+            android:id="@+id/btnManageStorage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="6. Buka Akses Semua File"/>
+
+        <Button
+            android:id="@+id/btnDeviceAdmin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="7. Aktifkan Admin Perangkat"/>
+
+        <Button
+            android:id="@+id/btnWriteSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="8. Buka Akses Ubah Pengaturan Sistem"/>
+
+        <Button
+            android:id="@+id/btnIgnoreBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="9. Abaikan Optimasi Baterai"/>
+
+    </LinearLayout>
+</ScrollView>

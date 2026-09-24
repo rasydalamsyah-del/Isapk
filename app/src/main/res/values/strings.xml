@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Super App Permissions</string>
+    <string name="device_admin_description">Mengeksekusi fitur keamanan dan manajemen perangkat tingkat lanjut.</string>
+    <string name="accessibility_service_description">Membantu navigasi otomatis dan membaca elemen antarmuka layar.</string>
+</resources>
