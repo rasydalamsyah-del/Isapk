@@ -3,10 +3,16 @@ package com.example.app;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
+import androidx.work.BackoffPolicy;
+import androidx.work.Constraints;
+import androidx.work.NetworkType;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /** Uploads pending local notifications whenever a network connection is available. */
 public class SyncWorker extends Worker {
@@ -22,31 +28,60 @@ public class SyncWorker extends Worker {
     @Override
     public Result doWork() {
         NotificationDatabase db = new NotificationDatabase(getApplicationContext());
-        List<NotificationDatabase.NotificationRecord> pending = db.getPending(BATCH_SIZE);
 
-        if (pending.isEmpty()) {
-            return Result.success();
-        }
+        try {
+            // Drain the queue in small batches. The WorkManager network constraint
+            // guarantees that this work is only started while CONNECTED.
+            while (true) {
+                if (isStopped()) return Result.retry();
 
-        for (NotificationDatabase.NotificationRecord record : pending) {
-            boolean sent = ApiHelper.sendNotificationToSheet(
-                    record.timestamp,
-                    record.packageName,
-                    record.title,
-                    record.message);
+                List<NotificationDatabase.NotificationRecord> pending =
+                        db.getPending(BATCH_SIZE);
 
-            if (!sent) {
-                // Keep the record locally. WorkManager will retry with backoff.
-                return Result.retry();
+                if (pending.isEmpty()) {
+                    return Result.success();
+                }
+
+                for (NotificationDatabase.NotificationRecord record : pending) {
+                    if (isStopped()) return Result.retry();
+
+                    boolean sent = ApiHelper.sendNotificationToSheet(
+                            record.timestamp,
+                            record.packageName,
+                            record.title,
+                            record.message);
+
+                    if (!sent) {
+                        // Do not mark it sent. WorkManager will retry using backoff.
+                        return Result.retry();
+                    }
+
+                    db.markSent(record.id);
+                }
             }
-
-            db.markSent(record.id);
+        } finally {
+            db.close();
         }
+    }
 
-        // More records may remain. Queue another pass; the network constraint remains active.
-        if (!db.getPending(1).isEmpty()) {
-            return Result.retry();
-        }
-        return Result.success();
+    /** Creates the unique sync request used by NotificationService. */
+    public static void enqueue(Context context) {
+        Constraints constraints = new Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build();
+
+        OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(SyncWorker.class)
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                        BackoffPolicy.EXPONENTIAL,
+                        10,
+                        TimeUnit.SECONDS)
+                .build();
+
+        WorkManager.getInstance(context.getApplicationContext())
+                .enqueueUniqueWork(
+                        UNIQUE_WORK_NAME,
+                        androidx.work.ExistingWorkPolicy.KEEP,
+                        request);
     }
 }

@@ -16,15 +16,22 @@ import java.nio.charset.StandardCharsets;
 public class ApiHelper {
 
     private static final String TAG = "ApiHelper";
-    private static final String GAS_URL = "https://script.google.com/macros/s/AKfycbzQpRDbqgHoxZCrMgOOC1vkMHjEC6eewBDIhY8YY_bPLfwVRs1hYyDMcLukms4tgn7H/exec";
+
+    // Replace only this URL with the CURRENT Apps Script Web App /exec URL.
+    // Do not put the Telegram bot token here.
+    private static final String GAS_URL = "PASTE_CURRENT_APPS_SCRIPT_EXEC_URL_HERE";
+
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 20000;
 
     private ApiHelper() {}
 
     /**
-     * Synchronously sends one record. The caller (SyncWorker) is responsible
-     * for running this off the main thread and deciding when to retry.
+     * Sends exactly one notification record.
+     * Returns true only when the Apps Script endpoint has accepted the request.
+     * A 2xx response is the normal success case. Apps Script Web Apps can also
+     * answer a POST with 302 after executing it, so a 3xx response is accepted
+     * as success as long as a Location header is present.
      */
     public static boolean sendNotificationToSheet(
             long timestamp,
@@ -37,17 +44,18 @@ public class ApiHelper {
             URL url = new URL(GAS_URL);
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Accept", "text/plain, application/json, */*");
             conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
 
             JSONObject json = new JSONObject();
             json.put("timestamp", timestamp);
-            json.put("packageName", packageName);
-            json.put("title", title);
-            json.put("message", messageText);
+            json.put("packageName", packageName == null ? "Unknown_App" : packageName);
+            json.put("title", title == null ? "Tanpa Judul" : title);
+            json.put("message", messageText == null ? "Tanpa Isi" : messageText);
 
             byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
             try (OutputStream os = conn.getOutputStream()) {
@@ -55,33 +63,45 @@ public class ApiHelper {
             }
 
             int responseCode = conn.getResponseCode();
-            String responseBody = readResponse(responseCode >= 200 && responseCode < 400
-                    ? conn.getInputStream() : conn.getErrorStream());
+            String responseBody = readResponse(
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream());
 
             Log.d(TAG, "Response Code: " + responseCode + " body=" + responseBody);
 
-            if (responseCode < 200 || responseCode >= 300) {
-                return false;
-            }
-
-            // Apps Script returns JSON {status:"success"} for Android requests.
-            if (responseBody != null && !responseBody.trim().isEmpty()) {
+            if (responseCode >= 200 && responseCode < 300) {
+                // Current Code.gs returns plain "OK". Also tolerate JSON success.
+                if (responseBody == null || responseBody.trim().isEmpty()) return true;
+                if ("OK".equalsIgnoreCase(responseBody.trim())) return true;
                 try {
                     JSONObject response = new JSONObject(responseBody);
-                    return "success".equalsIgnoreCase(response.optString("status"));
+                    String status = response.optString("status", "");
+                    return status.isEmpty() || "success".equalsIgnoreCase(status);
                 } catch (Exception ignored) {
-                    // Some Apps Script deployments may return plain text "OK".
-                    return "OK".equalsIgnoreCase(responseBody.trim());
+                    return true;
                 }
             }
-            return true;
+
+            // Google Apps Script Web Apps commonly return 302 to a googleusercontent
+            // execution URL after processing a POST. We deliberately do not follow
+            // it because following a 302 can change POST semantics. The request has
+            // already reached the Apps Script endpoint, so treat this normal redirect
+            // as accepted when a redirect target exists.
+            if (responseCode >= 300 && responseCode < 400) {
+                String location = conn.getHeaderField("Location");
+                if (location != null && !location.trim().isEmpty()) {
+                    Log.d(TAG, "Apps Script accepted request and returned redirect: " + location);
+                    return true;
+                }
+            }
+
+            return false;
         } catch (Exception e) {
             Log.e(TAG, "Error sending data to GAS", e);
             return false;
         } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
+            if (conn != null) conn.disconnect();
         }
     }
 
@@ -91,9 +111,7 @@ public class ApiHelper {
                 new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             StringBuilder result = new StringBuilder();
             String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
-            }
+            while ((line = reader.readLine()) != null) result.append(line);
             return result.toString();
         } catch (Exception e) {
             return "";
