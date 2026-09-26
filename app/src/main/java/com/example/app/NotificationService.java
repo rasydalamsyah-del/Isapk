@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import android.util.Log;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -11,13 +12,15 @@ import java.util.Set;
 /**
  * Receives Android notifications and persists them before attempting sync.
  *
- * The service keeps the existing notification fields:
- * packageName, title, message and timestamp.
- *
- * A short duplicate check prevents old conversation entries from being
- * inserted again when messaging apps rebuild/update their notification.
+ * Combines:
+ * - notification diagnostics/logging
+ * - in-memory duplicate protection
+ * - database recent-duplicate protection
+ * - local queue before network synchronization
  */
 public class NotificationService extends NotificationListenerService {
+
+    private static final String TAG = "NotificationDebug";
 
     /*
      * Prevents duplicate callbacks during the same process lifetime.
@@ -27,6 +30,8 @@ public class NotificationService extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
+
+        Log.d(TAG, "NotificationListener connected");
 
         // Drain anything that accumulated while offline.
         enqueueSync();
@@ -44,13 +49,27 @@ public class NotificationService extends NotificationListenerService {
 
         final Bundle extras = notification.extras;
 
+        long postTime = sbn.getPostTime();
+
+        /*
+         * Diagnostic information.
+         */
+        Log.d(TAG, "==============================");
+        Log.d(TAG, "NOTIFICATION POSTED / UPDATED");
+        Log.d(TAG, "packageName = " + packageName);
+        Log.d(TAG, "key        = " + sbn.getKey());
+        Log.d(TAG, "postTime   = " + postTime);
+        Log.d(TAG, "id         = " + sbn.getId());
+        Log.d(TAG, "tag        = " + sbn.getTag());
+
         String title = "Tanpa Judul";
         String message = "Tanpa Isi";
 
-        /*
-         * Read title.
-         */
         if (extras != null) {
+
+            /*
+             * TITLE
+             */
             CharSequence titleValue =
                     extras.getCharSequence(Notification.EXTRA_TITLE);
 
@@ -59,19 +78,74 @@ public class NotificationService extends NotificationListenerService {
                 title = titleValue.toString();
             }
 
+            Log.d(TAG, "EXTRA_TITLE = " + title);
+
             /*
-             * Prefer the normal notification text.
-             *
-             * We do not immediately treat EXTRA_TEXT_LINES as a
-             * separate set of messages because messaging apps can use
-             * those lines to represent the entire current summary.
+             * EXTRA_TEXT
              */
             CharSequence textValue =
                     extras.getCharSequence(Notification.EXTRA_TEXT);
 
+            Log.d(
+                    TAG,
+                    "EXTRA_TEXT = " +
+                            (textValue == null
+                                    ? "NULL"
+                                    : textValue.toString())
+            );
+
+            /*
+             * EXTRA_BIG_TEXT
+             */
             CharSequence bigTextValue =
                     extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
 
+            Log.d(
+                    TAG,
+                    "EXTRA_BIG_TEXT = " +
+                            (bigTextValue == null
+                                    ? "NULL"
+                                    : bigTextValue.toString())
+            );
+
+            /*
+             * EXTRA_TEXT_LINES
+             */
+            CharSequence[] lines =
+                    extras.getCharSequenceArray(
+                            Notification.EXTRA_TEXT_LINES
+                    );
+
+            if (lines == null) {
+
+                Log.d(TAG, "EXTRA_TEXT_LINES = NULL");
+
+            } else {
+
+                Log.d(
+                        TAG,
+                        "EXTRA_TEXT_LINES count = " +
+                                lines.length
+                );
+
+                for (int i = 0; i < lines.length; i++) {
+
+                    Log.d(
+                            TAG,
+                            "LINE[" + i + "] = " +
+                                    (lines[i] == null
+                                            ? "NULL"
+                                            : lines[i].toString())
+                    );
+                }
+            }
+
+            /*
+             * Message extraction.
+             *
+             * Prefer normal text first, then big text,
+             * then text lines.
+             */
             if (textValue != null &&
                     textValue.length() > 0) {
 
@@ -82,55 +156,66 @@ public class NotificationService extends NotificationListenerService {
 
                 message = bigTextValue.toString();
 
-            } else {
+            } else if (lines != null &&
+                    lines.length > 0) {
 
-                CharSequence[] lines =
-                        extras.getCharSequenceArray(
-                                Notification.EXTRA_TEXT_LINES
-                        );
+                StringBuilder builder =
+                        new StringBuilder();
 
-                if (lines != null && lines.length > 0) {
+                for (CharSequence line : lines) {
 
-                    StringBuilder builder =
-                            new StringBuilder();
-
-                    for (CharSequence line : lines) {
-
-                        if (line == null) continue;
-
-                        if (builder.length() > 0) {
-                            builder.append('\n');
-                        }
-
-                        builder.append(line);
-                    }
+                    if (line == null) continue;
 
                     if (builder.length() > 0) {
-                        message = builder.toString();
+                        builder.append('\n');
                     }
+
+                    builder.append(line);
+                }
+
+                if (builder.length() > 0) {
+                    message = builder.toString();
                 }
             }
         }
 
+        /*
+         * Use notification post time when available.
+         */
         long timestamp =
-                sbn.getPostTime() > 0
-                        ? sbn.getPostTime()
+                postTime > 0
+                        ? postTime
                         : System.currentTimeMillis();
 
         /*
          * Android notification identity.
          *
-         * Same notification callback with the same key and timestamp
-         * should never be inserted twice.
+         * Same notification key + same timestamp represents
+         * the same notification event.
          */
         String eventKey =
                 sbn.getKey() + "|" + timestamp;
 
         /*
+         * Diagnostic final values.
+         */
+        Log.d(TAG, "FINAL TITLE   = " + title);
+        Log.d(TAG, "FINAL MESSAGE = " + message);
+        Log.d(TAG, "eventKey      = " + eventKey);
+
+        /*
          * Fast in-memory duplicate protection.
          */
         synchronized (processedEvents) {
+
             if (processedEvents.contains(eventKey)) {
+
+                Log.d(
+                        TAG,
+                        "Duplicate callback ignored: " +
+                                eventKey
+                );
+
                 return;
             }
 
@@ -154,18 +239,11 @@ public class NotificationService extends NotificationListenerService {
         try {
 
             /*
-             * IMPORTANT:
+             * Prevent recent duplicate notification content.
              *
-             * Do not deduplicate by message forever.
-             *
-             * We only reject an identical package/title/message that
-             * appeared very recently. This handles notification
-             * rebuilding such as:
-             *
-             * Bund Ayang -> Keren
-             *
-             * followed shortly by Telegram/WhatsApp rebuilding its
-             * notification and exposing Bund Ayang -> Keren again.
+             * This handles messaging applications that rebuild
+             * or update their notification and expose the same
+             * message again shortly afterward.
              *
              * A later message with the same text is still allowed.
              */
@@ -175,31 +253,53 @@ public class NotificationService extends NotificationListenerService {
                     title,
                     message
             )) {
+
+                Log.d(
+                        TAG,
+                        "Recent duplicate ignored: " +
+                                packageName +
+                                " | " +
+                                title +
+                                " | " +
+                                message
+                );
+
                 return;
             }
 
             /*
              * Queue first.
              *
-             * No network operation happens here.
-             * This keeps offline notifications safe.
+             * No network operation happens inside the listener.
+             * This keeps notifications safe while offline.
              */
-            db.insert(
-                    timestamp,
-                    packageName,
-                    title,
-                    message,
-                    eventKey
+            long insertedId =
+                    db.insert(
+                            timestamp,
+                            packageName,
+                            title,
+                            message,
+                            eventKey
+                    );
+
+            Log.d(
+                    TAG,
+                    "Database insert result = " +
+                            insertedId
             );
 
         } finally {
+
             db.close();
         }
 
         /*
-         * Let WorkManager/SyncWorker handle network delivery.
+         * Let WorkManager / SyncWorker handle network delivery.
          */
         enqueueSync();
+
+        Log.d(TAG, "Notification queued for sync");
+        Log.d(TAG, "==============================");
     }
 
     private void enqueueSync() {
@@ -211,6 +311,7 @@ public class NotificationService extends NotificationListenerService {
     private String safePackageName(
             String packageName
     ) {
+
         return (
                 packageName == null ||
                         packageName.trim().isEmpty()
