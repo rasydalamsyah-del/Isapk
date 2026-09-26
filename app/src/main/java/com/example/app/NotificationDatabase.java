@@ -13,7 +13,7 @@ import java.util.List;
 public class NotificationDatabase extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "notification_queue.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
     private static final String TABLE = "notifications";
 
     public NotificationDatabase(Context context) {
@@ -28,24 +28,33 @@ public class NotificationDatabase extends SQLiteOpenHelper {
                 "package_name TEXT NOT NULL," +
                 "title TEXT NOT NULL," +
                 "message TEXT NOT NULL," +
+                "event_key TEXT," +
                 "status INTEGER NOT NULL DEFAULT 0" +
                 ")");
         db.execSQL("CREATE INDEX idx_notifications_status ON " + TABLE + "(status, id)");
+        db.execSQL("CREATE UNIQUE INDEX idx_notifications_event_key ON " + TABLE + "(event_key) WHERE event_key IS NOT NULL");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // No schema migrations yet; keep the existing queue intact for future versions.
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN event_key TEXT");
+            db.execSQL("CREATE UNIQUE INDEX idx_notifications_event_key ON " + TABLE + "(event_key) WHERE event_key IS NOT NULL");
+        }
     }
 
-    public synchronized long insert(long timestamp, String packageName, String title, String message) {
+    public synchronized long insert(long timestamp, String packageName, String title, String message, String eventKey) {
         ContentValues values = new ContentValues();
         values.put("timestamp", timestamp);
         values.put("package_name", packageName);
         values.put("title", title == null ? "Tanpa Judul" : title);
         values.put("message", message == null ? "Tanpa Isi" : message);
+        values.put("event_key", eventKey);
         values.put("status", 0);
-        return getWritableDatabase().insert(TABLE, null, values);
+        // A duplicate notification callback uses the same Android notification key
+        // and post time, so the unique event_key prevents a second queue entry.
+        return getWritableDatabase().insertWithOnConflict(
+                TABLE, null, values, SQLiteDatabase.CONFLICT_IGNORE);
     }
 
     public synchronized List<NotificationRecord> getPending(int limit) {

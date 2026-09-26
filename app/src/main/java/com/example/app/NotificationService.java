@@ -64,7 +64,8 @@ public class NotificationService extends NotificationListenerService {
         try {
             // Every posted notification is queued first. No network call happens
             // inside the listener, so an offline device does not lose the record.
-            db.insert(timestamp, packageName, title, message);
+            String eventKey = sbn.getKey() + "|" + timestamp;
+            db.insert(timestamp, packageName, title, message, eventKey);
         } finally {
             db.close();
         }
