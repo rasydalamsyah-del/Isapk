@@ -19,7 +19,7 @@ public class ApiHelper {
 
     // Replace only this URL with the CURRENT Apps Script Web App /exec URL.
     // Do not put the Telegram bot token here.
-    private static final String GAS_URL = "PASTE_CURRENT_APPS_SCRIPT_EXEC_URL_HERE";
+    private static final String GAS_URL = "https://script.google.com/macros/s/AKfycbw5HSVm2lQm4nVr-xZArwS8tbYL9fYYs7EVV4MbhxwY03jdHbI5_r0K6ZDk5QiIRfIZ8A/exec";
 
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 20000;
