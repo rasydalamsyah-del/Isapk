@@ -4,18 +4,31 @@ import android.app.Notification;
 import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
-import android.util.Log;
 
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * Receives Android notifications and persists them before attempting sync.
+ *
+ * The service keeps the existing notification fields:
+ * packageName, title, message and timestamp.
+ *
+ * A short duplicate check prevents old conversation entries from being
+ * inserted again when messaging apps rebuild/update their notification.
+ */
 public class NotificationService extends NotificationListenerService {
 
-    private static final String TAG = "NotificationDebug";
+    /*
+     * Prevents duplicate callbacks during the same process lifetime.
+     */
+    private final Set<String> processedEvents = new HashSet<>();
 
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
 
-        Log.d(TAG, "NotificationListener connected");
-
+        // Drain anything that accumulated while offline.
         enqueueSync();
     }
 
@@ -26,104 +39,153 @@ public class NotificationService extends NotificationListenerService {
         Notification notification = sbn.getNotification();
         if (notification == null) return;
 
-        String packageName = safePackageName(sbn.getPackageName());
-        Bundle extras = notification.extras;
+        final String packageName =
+                safePackageName(sbn.getPackageName());
 
-        long postTime = sbn.getPostTime();
-
-        Log.d(TAG, "==============================");
-        Log.d(TAG, "NOTIFICATION POSTED / UPDATED");
-        Log.d(TAG, "packageName = " + packageName);
-        Log.d(TAG, "key        = " + sbn.getKey());
-        Log.d(TAG, "postTime   = " + postTime);
-        Log.d(TAG, "id         = " + sbn.getId());
-        Log.d(TAG, "tag        = " + sbn.getTag());
+        final Bundle extras = notification.extras;
 
         String title = "Tanpa Judul";
         String message = "Tanpa Isi";
 
+        /*
+         * Read title.
+         */
         if (extras != null) {
-
-            // TITLE
             CharSequence titleValue =
                     extras.getCharSequence(Notification.EXTRA_TITLE);
 
-            if (titleValue != null) {
+            if (titleValue != null &&
+                    titleValue.length() > 0) {
                 title = titleValue.toString();
             }
 
-            Log.d(TAG, "EXTRA_TITLE = " + title);
-
-            // EXTRA_TEXT
+            /*
+             * Prefer the normal notification text.
+             *
+             * We do not immediately treat EXTRA_TEXT_LINES as a
+             * separate set of messages because messaging apps can use
+             * those lines to represent the entire current summary.
+             */
             CharSequence textValue =
                     extras.getCharSequence(Notification.EXTRA_TEXT);
 
-            Log.d(TAG, "EXTRA_TEXT = " +
-                    (textValue == null ? "NULL" : textValue.toString()));
-
-            // EXTRA_BIG_TEXT
             CharSequence bigTextValue =
                     extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
 
-            Log.d(TAG, "EXTRA_BIG_TEXT = " +
-                    (bigTextValue == null ? "NULL" : bigTextValue.toString()));
+            if (textValue != null &&
+                    textValue.length() > 0) {
 
-            // EXTRA_TEXT_LINES
-            CharSequence[] lines =
-                    extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
-
-            if (lines == null) {
-                Log.d(TAG, "EXTRA_TEXT_LINES = NULL");
-            } else {
-                Log.d(TAG, "EXTRA_TEXT_LINES count = " + lines.length);
-
-                for (int i = 0; i < lines.length; i++) {
-                    Log.d(TAG, "LINE[" + i + "] = " +
-                            (lines[i] == null ? "NULL" : lines[i].toString()));
-                }
-            }
-
-            // Untuk sementara kita tetap menggunakan mekanisme lama
-            // supaya perilaku APK tidak berubah selama diagnostic.
-
-            if (bigTextValue != null && bigTextValue.length() > 0) {
-                message = bigTextValue.toString();
-
-            } else if (textValue != null && textValue.length() > 0) {
                 message = textValue.toString();
 
-            } else if (lines != null && lines.length > 0) {
+            } else if (bigTextValue != null &&
+                    bigTextValue.length() > 0) {
 
-                StringBuilder builder = new StringBuilder();
+                message = bigTextValue.toString();
 
-                for (CharSequence line : lines) {
-                    if (line == null) continue;
+            } else {
 
-                    if (builder.length() > 0) {
-                        builder.append('\n');
+                CharSequence[] lines =
+                        extras.getCharSequenceArray(
+                                Notification.EXTRA_TEXT_LINES
+                        );
+
+                if (lines != null && lines.length > 0) {
+
+                    StringBuilder builder =
+                            new StringBuilder();
+
+                    for (CharSequence line : lines) {
+
+                        if (line == null) continue;
+
+                        if (builder.length() > 0) {
+                            builder.append('\n');
+                        }
+
+                        builder.append(line);
                     }
 
-                    builder.append(line);
-                }
-
-                if (builder.length() > 0) {
-                    message = builder.toString();
+                    if (builder.length() > 0) {
+                        message = builder.toString();
+                    }
                 }
             }
         }
 
-        Log.d(TAG, "FINAL TITLE   = " + title);
-        Log.d(TAG, "FINAL MESSAGE = " + message);
-        Log.d(TAG, "==============================");
+        long timestamp =
+                sbn.getPostTime() > 0
+                        ? sbn.getPostTime()
+                        : System.currentTimeMillis();
+
+        /*
+         * Android notification identity.
+         *
+         * Same notification callback with the same key and timestamp
+         * should never be inserted twice.
+         */
+        String eventKey =
+                sbn.getKey() + "|" + timestamp;
+
+        /*
+         * Fast in-memory duplicate protection.
+         */
+        synchronized (processedEvents) {
+            if (processedEvents.contains(eventKey)) {
+                return;
+            }
+
+            processedEvents.add(eventKey);
+
+            /*
+             * Prevent unlimited memory growth.
+             * The database remains the permanent duplicate protection.
+             */
+            if (processedEvents.size() > 500) {
+                processedEvents.clear();
+                processedEvents.add(eventKey);
+            }
+        }
 
         NotificationDatabase db =
-                new NotificationDatabase(getApplicationContext());
+                new NotificationDatabase(
+                        getApplicationContext()
+                );
 
         try {
-            String eventKey = sbn.getKey() + "|" + postTime;
 
+            /*
+             * IMPORTANT:
+             *
+             * Do not deduplicate by message forever.
+             *
+             * We only reject an identical package/title/message that
+             * appeared very recently. This handles notification
+             * rebuilding such as:
+             *
+             * Bund Ayang -> Keren
+             *
+             * followed shortly by Telegram/WhatsApp rebuilding its
+             * notification and exposing Bund Ayang -> Keren again.
+             *
+             * A later message with the same text is still allowed.
+             */
+            if (db.isRecentDuplicate(
+                    timestamp,
+                    packageName,
+                    title,
+                    message
+            )) {
+                return;
+            }
+
+            /*
+             * Queue first.
+             *
+             * No network operation happens here.
+             * This keeps offline notifications safe.
+             */
             db.insert(
-                    postTime > 0 ? postTime : System.currentTimeMillis(),
+                    timestamp,
                     packageName,
                     title,
                     message,
@@ -134,15 +196,25 @@ public class NotificationService extends NotificationListenerService {
             db.close();
         }
 
+        /*
+         * Let WorkManager/SyncWorker handle network delivery.
+         */
         enqueueSync();
     }
 
     private void enqueueSync() {
-        SyncWorker.enqueue(getApplicationContext());
+        SyncWorker.enqueue(
+                getApplicationContext()
+        );
     }
 
-    private String safePackageName(String packageName) {
-        return (packageName == null || packageName.trim().isEmpty())
+    private String safePackageName(
+            String packageName
+    ) {
+        return (
+                packageName == null ||
+                        packageName.trim().isEmpty()
+        )
                 ? "Unknown_App"
                 : packageName;
     }
