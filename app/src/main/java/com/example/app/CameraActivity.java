@@ -1,6 +1,7 @@
 package com.example.app;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.widget.Button;
@@ -181,8 +182,8 @@ public class CameraActivity extends AppCompatActivity {
                                 Toast.LENGTH_SHORT
                         ).show();
 
-                        // Tahap berikutnya akan mengirim file ini melalui backend
-                        // setelah command Telegram dan upload endpoint selesai dibuat.
+                        // Upload hanya setelah pengguna menekan "Ambil Foto".
+                        uploadLastCapturedPhoto();
                     }
 
                     @Override
@@ -232,18 +233,42 @@ public class CameraActivity extends AppCompatActivity {
 
         final String currentRequestId = requestId;
         final String currentCamera = requestedCamera;
+        final File photo = lastCapturedPhoto;
+
+        if (currentRequestId == null || currentRequestId.trim().isEmpty()) {
+            Toast.makeText(this, "ID permintaan kamera tidak valid.", Toast.LENGTH_LONG).show();
+            return;
+        }
 
         new Thread(() -> {
             boolean uploaded = ApiHelper.uploadCapturedPhoto(
                     currentRequestId,
                     currentCamera,
-                    lastCapturedPhoto);
+                    photo);
 
-            runOnUiThread(() -> Toast.makeText(
-                    CameraActivity.this,
-                    uploaded ? "Foto berhasil dikirim." : "Gagal mengirim foto.",
-                    Toast.LENGTH_SHORT
-            ).show());
+            ApiHelper.updateCameraRequestStatus(
+                    currentRequestId,
+                    uploaded ? "COMPLETED" : "UPLOAD_FAILED");
+
+            runOnUiThread(() -> {
+                Toast.makeText(
+                        CameraActivity.this,
+                        uploaded
+                                ? "Foto berhasil dikirim."
+                                : "Gagal mengirim foto.",
+                        Toast.LENGTH_SHORT
+                ).show();
+
+                if (uploaded) {
+                    // File berada di cache dan tidak diperlukan lagi setelah upload.
+                    // Hapus hanya setelah backend menerima upload.
+                    if (photo.exists() && !photo.delete()) {
+                        photo.deleteOnExit();
+                    }
+                    lastCapturedPhoto = null;
+                    finish();
+                }
+            });
         }).start();
     }
 
