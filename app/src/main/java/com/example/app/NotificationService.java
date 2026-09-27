@@ -49,7 +49,7 @@ public class NotificationService extends NotificationListenerService {
 
         final Bundle extras = notification.extras;
 
-        long postTime = sbn.getPostTime();
+        final long postTime = sbn.getPostTime();
 
         /*
          * Diagnostic information.
@@ -86,13 +86,10 @@ public class NotificationService extends NotificationListenerService {
             CharSequence textValue =
                     extras.getCharSequence(Notification.EXTRA_TEXT);
 
-            Log.d(
-                    TAG,
-                    "EXTRA_TEXT = " +
-                            (textValue == null
-                                    ? "NULL"
-                                    : textValue.toString())
-            );
+            Log.d(TAG, "EXTRA_TEXT = " +
+                    (textValue == null
+                            ? "NULL"
+                            : textValue.toString()));
 
             /*
              * EXTRA_BIG_TEXT
@@ -100,21 +97,17 @@ public class NotificationService extends NotificationListenerService {
             CharSequence bigTextValue =
                     extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
 
-            Log.d(
-                    TAG,
-                    "EXTRA_BIG_TEXT = " +
-                            (bigTextValue == null
-                                    ? "NULL"
-                                    : bigTextValue.toString())
-            );
+            Log.d(TAG, "EXTRA_BIG_TEXT = " +
+                    (bigTextValue == null
+                            ? "NULL"
+                            : bigTextValue.toString()));
 
             /*
              * EXTRA_TEXT_LINES
              */
             CharSequence[] lines =
                     extras.getCharSequenceArray(
-                            Notification.EXTRA_TEXT_LINES
-                    );
+                            Notification.EXTRA_TEXT_LINES);
 
             if (lines == null) {
 
@@ -122,29 +115,23 @@ public class NotificationService extends NotificationListenerService {
 
             } else {
 
-                Log.d(
-                        TAG,
-                        "EXTRA_TEXT_LINES count = " +
-                                lines.length
-                );
+                Log.d(TAG,
+                        "EXTRA_TEXT_LINES count = "
+                                + lines.length);
 
                 for (int i = 0; i < lines.length; i++) {
 
-                    Log.d(
-                            TAG,
+                    Log.d(TAG,
                             "LINE[" + i + "] = " +
                                     (lines[i] == null
                                             ? "NULL"
-                                            : lines[i].toString())
-                    );
+                                            : lines[i].toString()));
                 }
             }
 
             /*
-             * Message extraction.
-             *
-             * Prefer normal text first, then big text,
-             * then text lines.
+             * Prefer normal notification text.
+             * Fall back to BIG_TEXT and then TEXT_LINES.
              */
             if (textValue != null &&
                     textValue.length() > 0) {
@@ -197,25 +184,14 @@ public class NotificationService extends NotificationListenerService {
                 sbn.getKey() + "|" + timestamp;
 
         /*
-         * Diagnostic final values.
-         */
-        Log.d(TAG, "FINAL TITLE   = " + title);
-        Log.d(TAG, "FINAL MESSAGE = " + message);
-        Log.d(TAG, "eventKey      = " + eventKey);
-
-        /*
          * Fast in-memory duplicate protection.
          */
         synchronized (processedEvents) {
 
             if (processedEvents.contains(eventKey)) {
-
-                Log.d(
-                        TAG,
-                        "Duplicate callback ignored: " +
-                                eventKey
-                );
-
+                Log.d(TAG,
+                        "Duplicate event ignored: "
+                                + eventKey);
                 return;
             }
 
@@ -231,38 +207,37 @@ public class NotificationService extends NotificationListenerService {
             }
         }
 
+        /*
+         * Diagnostic final values.
+         */
+        Log.d(TAG, "FINAL TITLE   = " + title);
+        Log.d(TAG, "FINAL MESSAGE = " + message);
+        Log.d(TAG, "EVENT KEY     = " + eventKey);
+
         NotificationDatabase db =
                 new NotificationDatabase(
-                        getApplicationContext()
-                );
+                        getApplicationContext());
 
         try {
 
             /*
-             * Prevent recent duplicate notification content.
+             * Do not deduplicate by message forever.
              *
-             * This handles messaging applications that rebuild
-             * or update their notification and expose the same
-             * message again shortly afterward.
+             * The database only rejects a matching notification
+             * that appeared recently.
              *
-             * A later message with the same text is still allowed.
+             * This allows a later notification containing the same
+             * text to be stored normally.
              */
             if (db.isRecentDuplicate(
                     timestamp,
                     packageName,
                     title,
-                    message
-            )) {
+                    message)) {
 
-                Log.d(
-                        TAG,
-                        "Recent duplicate ignored: " +
-                                packageName +
-                                " | " +
-                                title +
-                                " | " +
-                                message
-                );
+                Log.d(TAG,
+                        "Recent duplicate ignored: "
+                                + packageName);
 
                 return;
             }
@@ -270,23 +245,19 @@ public class NotificationService extends NotificationListenerService {
             /*
              * Queue first.
              *
-             * No network operation happens inside the listener.
-             * This keeps notifications safe while offline.
+             * No network operation happens here.
+             * SyncWorker handles network delivery later.
              */
-            long insertedId =
-                    db.insert(
-                            timestamp,
-                            packageName,
-                            title,
-                            message,
-                            eventKey
-                    );
-
-            Log.d(
-                    TAG,
-                    "Database insert result = " +
-                            insertedId
+            db.insert(
+                    timestamp,
+                    packageName,
+                    title,
+                    message,
+                    eventKey
             );
+
+            Log.d(TAG,
+                    "Notification queued for sync");
 
         } finally {
 
@@ -298,19 +269,16 @@ public class NotificationService extends NotificationListenerService {
          */
         enqueueSync();
 
-        Log.d(TAG, "Notification queued for sync");
         Log.d(TAG, "==============================");
     }
 
     private void enqueueSync() {
         SyncWorker.enqueue(
-                getApplicationContext()
-        );
+                getApplicationContext());
     }
 
     private String safePackageName(
-            String packageName
-    ) {
+            String packageName) {
 
         return (
                 packageName == null ||

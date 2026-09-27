@@ -105,6 +105,209 @@ public class ApiHelper {
         }
     }
 
+
+    /**
+     * Tahap 3: cek satu pending camera request dari Apps Script.
+     * Menggunakan endpoint /exec?action=getCameraRequest.
+     */
+    public static JSONObject getPendingCameraRequest() {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(GAS_URL + "?action=getCameraRequest");
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+            String responseBody = readResponse(
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream());
+
+            Log.d(TAG, "Camera request response: " + responseCode + " body=" + responseBody);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    responseBody == null || responseBody.trim().isEmpty()) {
+                return null;
+            }
+
+            return new JSONObject(responseBody);
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking camera request", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Tahap 3: ubah status request kamera.
+     */
+    public static boolean updateCameraRequestStatus(String requestId, String status) {
+        if (requestId == null || requestId.trim().isEmpty()) return false;
+        if (status == null || status.trim().isEmpty()) return false;
+
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(GAS_URL);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "text/plain, application/json, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action", "cameraRequestStatus");
+            json.put("requestId", requestId);
+            json.put("status", status);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+            }
+
+            int responseCode = conn.getResponseCode();
+            String responseBody = readResponse(
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream());
+
+            Log.d(TAG, "Camera status response: " + responseCode + " body=" + responseBody);
+
+            if (responseCode >= 200 && responseCode < 300) return true;
+
+            if (responseCode >= 300 && responseCode < 400) {
+                String location = conn.getHeaderField("Location");
+                return location != null && !location.trim().isEmpty();
+            }
+
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating camera request status", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+
+    /**
+     * Stage 6: upload one explicitly captured photo.
+     * The caller must invoke this only after the user presses "Ambil Foto".
+     *
+     * The backend can use requestId to associate the upload with the
+     * corresponding camera request.
+     */
+    public static boolean uploadCapturedPhoto(
+            String requestId,
+            String camera,
+            java.io.File photoFile) {
+
+        if (photoFile == null || !photoFile.isFile() || photoFile.length() <= 0) {
+            return false;
+        }
+
+        HttpURLConnection conn = null;
+        String boundary = "----AndroidPhotoBoundary" + System.currentTimeMillis();
+
+        try {
+            URL url = new URL(GAS_URL);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "multipart/form-data; boundary=" + boundary);
+            conn.setRequestProperty("Accept", "text/plain, application/json, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            try (OutputStream os = conn.getOutputStream();
+                 java.io.BufferedOutputStream out =
+                         new java.io.BufferedOutputStream(os);
+                 java.io.FileInputStream fileInput =
+                         new java.io.FileInputStream(photoFile)) {
+
+                writeMultipartText(out, boundary, "action", "uploadCameraPhoto");
+                writeMultipartText(out, boundary, "requestId",
+                        requestId == null ? "" : requestId);
+                writeMultipartText(out, boundary, "camera",
+                        camera == null ? "" : camera);
+
+                out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(("Content-Disposition: form-data; name=\"photo\"; filename=\""
+                        + photoFile.getName() + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(("Content-Type: image/jpeg\r\n\r\n")
+                        .getBytes(StandardCharsets.UTF_8));
+
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = fileInput.read(buffer)) != -1) {
+                    out.write(buffer, 0, count);
+                }
+
+                out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+                out.write(("--" + boundary + "--\r\n")
+                        .getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            String responseBody = readResponse(
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream());
+
+            Log.d(TAG, "Photo upload response: "
+                    + responseCode + " body=" + responseBody);
+
+            if (responseCode >= 200 && responseCode < 300) {
+                if (responseBody == null || responseBody.trim().isEmpty()) return true;
+                if ("OK".equalsIgnoreCase(responseBody.trim())) return true;
+
+                try {
+                    JSONObject response = new JSONObject(responseBody);
+                    String status = response.optString("status", "");
+                    return status.isEmpty() || "success".equalsIgnoreCase(status);
+                } catch (Exception ignored) {
+                    return true;
+                }
+            }
+
+            if (responseCode >= 300 && responseCode < 400) {
+                String location = conn.getHeaderField("Location");
+                return location != null && !location.trim().isEmpty();
+            }
+
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "Error uploading captured photo", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static void writeMultipartText(
+            java.io.OutputStream out,
+            String boundary,
+            String name,
+            String value) throws java.io.IOException {
+
+        out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        out.write((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+        out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
     private static String readResponse(InputStream stream) {
         if (stream == null) return "";
         try (BufferedReader reader = new BufferedReader(

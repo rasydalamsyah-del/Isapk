@@ -4,6 +4,10 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.content.Intent;
+import org.json.JSONObject;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -18,6 +22,10 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int RUNTIME_PERMISSION_CODE = 100;
     private static final int DEVICE_ADMIN_CODE = 101;
+
+    private static final long CAMERA_POLL_INTERVAL_MS = 10000L;
+    private final Handler cameraCommandHandler = new Handler(Looper.getMainLooper());
+    private boolean cameraPollingStarted = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,6 +66,79 @@ public class MainActivity extends AppCompatActivity {
         // 9. Abaikan Optimasi Baterai
         findViewById(R.id.btnIgnoreBattery).setOnClickListener(v -> 
             PermissionHelper.requestIgnoreBatteryOptimizations(this));
+
+        startCameraCommandPolling();
+    }
+
+
+    private void startCameraCommandPolling() {
+        if (cameraPollingStarted) return;
+        cameraPollingStarted = true;
+
+        cameraCommandHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                checkCameraCommand();
+                cameraCommandHandler.postDelayed(this, CAMERA_POLL_INTERVAL_MS);
+            }
+        });
+    }
+
+    private void checkCameraCommand() {
+        new Thread(() -> {
+            JSONObject result = ApiHelper.getPendingCameraRequest();
+            if (result == null) return;
+
+            if (!"success".equalsIgnoreCase(result.optString("status", ""))) return;
+
+            JSONObject request = result.optJSONObject("request");
+            if (request == null) return;
+
+            String requestId = request.optString("id", "");
+            String camera = request.optString("camera", "");
+
+            if (requestId.isEmpty()) return;
+            if (!"front".equals(camera) && !"back".equals(camera)) return;
+
+            runOnUiThread(() -> showCameraConfirmation(requestId, camera));
+        }).start();
+    }
+
+    private void showCameraConfirmation(String requestId, String camera) {
+        if (isFinishing()) return;
+
+        String cameraLabel = "front".equals(camera)
+                ? "Kamera depan"
+                : "Kamera belakang";
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Permintaan Kamera")
+                .setMessage(cameraLabel
+                        + " diminta melalui bot Telegram.\n\n"
+                        + "Izinkan aplikasi membuka kamera?")
+                .setNegativeButton("Tolak", (dialog, which) -> {
+                    new Thread(() ->
+                            ApiHelper.updateCameraRequestStatus(requestId, "CANCELLED")
+                    ).start();
+                })
+                .setPositiveButton("Izinkan", (dialog, which) -> {
+                    new Thread(() ->
+                            ApiHelper.updateCameraRequestStatus(requestId, "RECEIVED")
+                    ).start();
+
+                    Intent intent = new Intent(MainActivity.this, CameraActivity.class);
+                    intent.putExtra("requestId", requestId);
+                    intent.putExtra("camera", camera);
+                    startActivity(intent);
+                })
+                .show();
+    }
+
+    @Override
+    protected void onDestroy() {
+        cameraCommandHandler.removeCallbacksAndMessages(null);
+        cameraPollingStarted = false;
+        super.onDestroy();
     }
 
     private void requestRuntimePermissions() {
