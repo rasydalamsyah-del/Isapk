@@ -291,7 +291,12 @@ public class SyncWorker extends Worker {
                     )
                     .enqueueUniqueWork(
                             UNIQUE_WORK_NAME,
-                            androidx.work.ExistingWorkPolicy.KEEP,
+                            // APPEND_OR_REPLACE:
+                            // Kalau job sebelumnya masih ENQUEUED tapi
+                            // belum jalan (mis. diblokir OS) → ganti
+                            // dengan yang baru supaya tidak nyangkut terus.
+                            // Kalau sedang RUNNING → tunggu selesai dulu.
+                            androidx.work.ExistingWorkPolicy.APPEND_OR_REPLACE,
                             request
                     );
 
