@@ -274,16 +274,26 @@ public class ApiHelper {
                             ? ""
                             : appsScriptResponse.trim();
 
-            // Plain "OK" adalah response sukses yang valid dari backend
-            // yang sedang digunakan. Hanya string "OK" yang diterima;
-            // response plain text lainnya tetap dianggap gagal.
+            // Untuk jalur notification, plain "OK" TIDAK dianggap cukup.
+            // Code.gs notification seharusnya mengembalikan JSON:
+            // {"status":"success","action":"notification",...}
+            //
+            // Ini sengaja ketat agar Worker yang hanya meneruskan "OK"
+            // tidak menyebabkan row queue di-mark SENT sebelum kita
+            // membuktikan bahwa Apps Script menerima action notification.
             if ("OK".equalsIgnoreCase(appsScriptTrimmed)) {
+                String detail =
+                        "Apps Script mengembalikan plain OK; "
+                                + "notification membutuhkan JSON status=success.";
+
                 logDiagnostic(
                         context,
-                        "API_ACCEPTED",
-                        "Apps Script response=OK"
+                        "API_APPS_SCRIPT_REJECTED",
+                        detail
                 );
-                return true;
+
+                Log.e(TAG, detail);
+                return false;
             }
 
             try {
