@@ -85,320 +85,109 @@ public class ApiHelper {
             String messageText) {
 
         HttpURLConnection conn = null;
+        android.content.Context ctx = AppContextHolder.get();
 
         try {
+            DiagnosticLogger.log(ctx, "API_CONNECT_START", "worker=" + WORKER_URL);
 
             URL url = new URL(WORKER_URL);
-
             conn = (HttpURLConnection) url.openConnection();
-
             conn.setRequestMethod("POST");
-
-            /*
-             * Worker diharapkan mengembalikan respons final 200.
-             * Tetap tidak mengikuti redirect secara otomatis.
-             */
             conn.setInstanceFollowRedirects(false);
-
-            conn.setRequestProperty(
-                    "Content-Type",
-                    "application/json; charset=utf-8"
-            );
-
-            conn.setRequestProperty(
-                    "Accept",
-                    "application/json, text/plain, */*"
-            );
-
-            conn.setConnectTimeout(
-                    CONNECT_TIMEOUT_MS
-            );
-
-            conn.setReadTimeout(
-                    READ_TIMEOUT_MS
-            );
-
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
 
+            JSONObject json = new JSONObject();
+            json.put("action", "notification");
+            json.put("timestamp", timestamp);
+            json.put("packageName", packageName == null ? "Unknown_App" : packageName);
+            json.put("title", title == null ? "Tanpa Judul" : title);
+            json.put("message", messageText == null ? "Tanpa Isi" : messageText);
 
-            JSONObject json =
-                    new JSONObject();
-
-            /*
-             * Worker menggunakan action untuk membedakan
-             * request notifikasi.
-             */
-            json.put(
-                    "action",
-                    "notification"
-            );
-
-            json.put(
-                    "timestamp",
-                    timestamp
-            );
-
-            json.put(
-                    "packageName",
-                    packageName == null
-                            ? "Unknown_App"
-                            : packageName
-            );
-
-            json.put(
-                    "title",
-                    title == null
-                            ? "Tanpa Judul"
-                            : title
-            );
-
-            json.put(
-                    "message",
-                    messageText == null
-                            ? "Tanpa Isi"
-                            : messageText
-            );
-
-
-            byte[] body =
-                    json.toString()
-                            .getBytes(
-                                    StandardCharsets.UTF_8
-                            );
-
-
-            try (
-                    OutputStream os =
-                            conn.getOutputStream()
-            ) {
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream os = conn.getOutputStream()) {
                 os.write(body);
                 os.flush();
             }
 
+            int responseCode = conn.getResponseCode();
+            InputStream responseStream = responseCode >= 200 && responseCode < 400
+                    ? conn.getInputStream()
+                    : conn.getErrorStream();
+            String responseBody = readResponse(responseStream);
 
-            int responseCode =
-                    conn.getResponseCode();
+            Log.d(TAG, "Notification Worker response: " + responseCode + " body=" + responseBody);
 
-
-            InputStream responseStream;
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 400
-            ) {
-                responseStream =
-                        conn.getInputStream();
-            } else {
-                responseStream =
-                        conn.getErrorStream();
-            }
-
-
-            String responseBody =
-                    readResponse(
-                            responseStream
-                    );
-
-
-            Log.d(
-                    TAG,
-                    "Notification Worker response: "
-                            + responseCode
-                            + " body="
-                            + responseBody
-            );
-
-
-            // =================================================
-            // NORMAL SUCCESS
-            // =================================================
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 300
-            ) {
-
-                if (
-                        responseBody == null ||
-                        responseBody.trim().isEmpty()
-                ) {
+            if (responseCode >= 200 && responseCode < 300) {
+                if (responseBody == null || responseBody.trim().isEmpty()) {
+                    DiagnosticLogger.log(ctx, "API_RESPONSE_2XX", "empty body");
                     return true;
                 }
 
-
-                String trimmed =
-                        responseBody.trim();
-
-
-                /*
-                 * Toleransi terhadap Worker yang
-                 * hanya mengembalikan "OK".
-                 */
-                if (
-                        "OK".equalsIgnoreCase(
-                                trimmed
-                        )
-                ) {
+                String trimmed = responseBody.trim();
+                if ("OK".equalsIgnoreCase(trimmed)) {
+                    DiagnosticLogger.log(ctx, "API_RESPONSE_2XX", "plain OK");
                     return true;
                 }
-
-
-                /*
-                 * Worker kita sekarang mengembalikan JSON
-                 * seperti:
-                 *
-                 * {
-                 *   "worker": "OK",
-                 *   "appsScriptStatus": 200,
-                 *   "appsScriptStatusText": "OK",
-                 *   "appsScriptResponse": "OK"
-                 * }
-                 */
 
                 try {
+                    JSONObject response = new JSONObject(trimmed);
+                    String worker = response.optString("worker", "");
+                    int appsScriptStatus = response.optInt("appsScriptStatus", -1);
+                    String appsScriptResponse = response.optString("appsScriptResponse", "");
+                    String status = response.optString("status", "");
 
-                    JSONObject response =
-                            new JSONObject(
-                                    trimmed
-                            );
+                    boolean success =
+                            ("OK".equalsIgnoreCase(worker)
+                                    && appsScriptStatus >= 200
+                                    && appsScriptStatus < 300)
+                            || "success".equalsIgnoreCase(status)
+                            || "OK".equalsIgnoreCase(appsScriptResponse);
 
-
-                    String worker =
-                            response.optString(
-                                    "worker",
-                                    ""
-                            );
-
-
-                    int appsScriptStatus =
-                            response.optInt(
-                                    "appsScriptStatus",
-                                    -1
-                            );
-
-
-                    String appsScriptResponse =
-                            response.optString(
-                                    "appsScriptResponse",
-                                    ""
-                            );
-
-
-                    if (
-                            "OK".equalsIgnoreCase(
-                                    worker
-                            ) &&
-                            appsScriptStatus >= 200 &&
-                            appsScriptStatus < 300
-                    ) {
-                        return true;
-                    }
-
-
-                    /*
-                     * Fallback untuk format JSON
-                     * Apps Script lama.
-                     */
-                    String status =
-                            response.optString(
-                                    "status",
-                                    ""
-                            );
-
-
-                    if (
-                            "success".equalsIgnoreCase(
-                                    status
-                            )
-                    ) {
-                        return true;
-                    }
-
-
-                    /*
-                     * Jika Worker mengatakan OK dan
-                     * Apps Script response juga OK.
-                     */
-                    if (
-                            "OK".equalsIgnoreCase(
-                                    appsScriptResponse
-                            )
-                    ) {
-                        return true;
-                    }
-
-                } catch (Exception ignored) {
-
-                    /*
-                     * Jika Worker mengembalikan response
-                     * plain text non-JSON tetapi HTTP 200,
-                     * anggap diterima.
-                     */
-
-                    return true;
-                }
-            }
-
-
-            // =================================================
-            // REDIRECT
-            // =================================================
-
-            if (
-                    responseCode >= 300 &&
-                    responseCode < 400
-            ) {
-
-                String location =
-                        conn.getHeaderField(
-                                "Location"
-                        );
-
-
-                if (
-                        location != null &&
-                        !location.trim().isEmpty()
-                ) {
-
-                    Log.d(
-                            TAG,
-                            "Notification Worker returned redirect: "
-                                    + location
+                    DiagnosticLogger.log(
+                            ctx,
+                            success ? "API_RESPONSE_SUCCESS" : "API_RESPONSE_REJECTED",
+                            "http=" + responseCode
+                                    + " worker=" + worker
+                                    + " appsScriptStatus=" + appsScriptStatus
                     );
-
+                    if (!success) {
+                        DiagnosticLogger.error(ctx,
+                                "Worker response did not indicate success: " + trimmed);
+                    }
+                    return success;
+                } catch (Exception ignored) {
+                    DiagnosticLogger.log(ctx, "API_RESPONSE_2XX", "non-JSON body");
                     return true;
                 }
             }
 
+            if (responseCode >= 300 && responseCode < 400) {
+                String location = conn.getHeaderField("Location");
+                if (location != null && !location.trim().isEmpty()) {
+                    DiagnosticLogger.log(ctx, "API_REDIRECT", "http=" + responseCode);
+                    return true;
+                }
+            }
 
-            Log.e(
-                    TAG,
-                    "Notification send failed. HTTP "
-                            + responseCode
-                            + " body="
-                            + responseBody
+            DiagnosticLogger.log(
+                    ctx,
+                    "API_HTTP_ERROR",
+                    "http=" + responseCode + " body=" + DiagnosticLogger.truncate(responseBody, 200)
             );
-
-
+            DiagnosticLogger.error(ctx, "Notification HTTP " + responseCode);
             return false;
-
 
         } catch (Exception e) {
-
-            Log.e(
-                    TAG,
-                    "Error sending notification to Worker",
-                    e
-            );
-
+            Log.e(TAG, "Error sending notification to Worker", e);
+            DiagnosticLogger.log(ctx, "API_EXCEPTION", e.toString());
+            DiagnosticLogger.error(ctx, "Notification API: " + e);
             return false;
-
-
         } finally {
-
-            if (conn != null) {
-                conn.disconnect();
-            }
+            if (conn != null) conn.disconnect();
         }
     }
 

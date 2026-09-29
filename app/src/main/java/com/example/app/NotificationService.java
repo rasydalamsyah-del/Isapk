@@ -9,89 +9,45 @@ import android.util.Log;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Receives Android notifications and persists them before attempting sync.
- *
- * Diagnostic additions:
- * - records service connection
- * - records notification reception
- * - records duplicate filtering
- * - verifies database insert result
- * - records sync enqueue
- */
-public class NotificationService
-        extends NotificationListenerService {
+/** Receives Android notifications, queues them locally, then triggers sync. */
+public class NotificationService extends NotificationListenerService {
 
-    private static final String TAG =
-            "NotificationDebug";
-
-    private final Set<String> processedEvents =
-            new HashSet<>();
+    private static final String TAG = "NotificationDebug";
+    private final Set<String> processedEvents = new HashSet<>();
 
     @Override
     public void onListenerConnected() {
-
         super.onListenerConnected();
+        Log.d(TAG, "NotificationListener connected");
+        DiagnosticLogger.log(this, "SERVICE_CONNECTED", "Notification listener connected");
+        DiagnosticLogger.status(this, "SERVICE_CONNECTED");
 
-        Log.d(
-                TAG,
-                "NotificationListener connected"
-        );
-
-        DebugLogger.log(
-                getApplicationContext(),
-                "SERVICE_CONNECTED",
-                "NotificationListenerService connected"
-        );
-
-        DebugLogger.setStatus(
-                getApplicationContext(),
-                "SERVICE_CONNECTED"
-        );
-
-        enqueueSync();
+        try {
+            enqueueSync();
+            DiagnosticLogger.log(this, "SYNC_ENQUEUED", "Listener connected");
+        } catch (Exception e) {
+            DiagnosticLogger.error(this, "enqueue on connect: " + e);
+            DiagnosticLogger.log(this, "SYNC_ENQUEUE_ERROR", e.toString());
+        }
     }
 
     @Override
-    public void onNotificationPosted(
-            StatusBarNotification sbn
-    ) {
+    public void onNotificationPosted(StatusBarNotification sbn) {
+        if (sbn == null) return;
 
-        if (sbn == null) {
+        DiagnosticLogger.log(this, "NOTIFICATION_CALLBACK", "onNotificationPosted");
+        DiagnosticLogger.status(this, "NOTIFICATION_CALLBACK");
 
-            DebugLogger.log(
-                    getApplicationContext(),
-                    "NOTIFICATION_NULL",
-                    "StatusBarNotification = null"
-            );
-
-            return;
-        }
-
-        Notification notification =
-                sbn.getNotification();
-
+        Notification notification = sbn.getNotification();
         if (notification == null) {
-
-            DebugLogger.log(
-                    getApplicationContext(),
-                    "NOTIFICATION_OBJECT_NULL",
-                    "Notification object = null"
-            );
-
+            DiagnosticLogger.log(this, "NOTIFICATION_NULL", "StatusBarNotification notification is null");
+            DiagnosticLogger.error(this, "Notification object is null");
             return;
         }
 
-        final String packageName =
-                safePackageName(
-                        sbn.getPackageName()
-                );
-
-        final Bundle extras =
-                notification.extras;
-
-        final long postTime =
-                sbn.getPostTime();
+        final String packageName = safePackageName(sbn.getPackageName());
+        final Bundle extras = notification.extras;
+        final long postTime = sbn.getPostTime();
 
         Log.d(TAG, "==============================");
         Log.d(TAG, "NOTIFICATION POSTED / UPDATED");
@@ -101,383 +57,116 @@ public class NotificationService
         Log.d(TAG, "id         = " + sbn.getId());
         Log.d(TAG, "tag        = " + sbn.getTag());
 
-        DebugLogger.log(
-                getApplicationContext(),
-                "NOTIFICATION_RECEIVED",
-                "package=" + packageName
-        );
-
         String title = "Tanpa Judul";
         String message = "Tanpa Isi";
 
         if (extras != null) {
-
-            CharSequence titleValue =
-                    extras.getCharSequence(
-                            Notification.EXTRA_TITLE
-                    );
-
-            if (titleValue != null &&
-                    titleValue.length() > 0) {
-
-                title =
-                        titleValue.toString();
+            CharSequence titleValue = extras.getCharSequence(Notification.EXTRA_TITLE);
+            if (titleValue != null && titleValue.length() > 0) {
+                title = titleValue.toString();
             }
 
-            Log.d(
-                    TAG,
-                    "EXTRA_TITLE = " + title
-            );
+            CharSequence textValue = extras.getCharSequence(Notification.EXTRA_TEXT);
+            CharSequence bigTextValue = extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+            CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
 
-            CharSequence textValue =
-                    extras.getCharSequence(
-                            Notification.EXTRA_TEXT
-                    );
-
-            Log.d(
-                    TAG,
-                    "EXTRA_TEXT = " +
-                            (
-                                    textValue == null
-                                            ? "NULL"
-                                            : textValue.toString()
-                            )
-            );
-
-            CharSequence bigTextValue =
-                    extras.getCharSequence(
-                            Notification.EXTRA_BIG_TEXT
-                    );
-
-            Log.d(
-                    TAG,
-                    "EXTRA_BIG_TEXT = " +
-                            (
-                                    bigTextValue == null
-                                            ? "NULL"
-                                            : bigTextValue.toString()
-                            )
-            );
-
-            CharSequence[] lines =
-                    extras.getCharSequenceArray(
-                            Notification.EXTRA_TEXT_LINES
-                    );
-
-            if (lines == null) {
-
-                Log.d(
-                        TAG,
-                        "EXTRA_TEXT_LINES = NULL"
-                );
-
-            } else {
-
-                Log.d(
-                        TAG,
-                        "EXTRA_TEXT_LINES count = " +
-                                lines.length
-                );
-
-                for (int i = 0;
-                     i < lines.length;
-                     i++) {
-
-                    Log.d(
-                            TAG,
-                            "LINE[" + i + "] = " +
-                                    (
-                                            lines[i] == null
-                                                    ? "NULL"
-                                                    : lines[i].toString()
-                                    )
-                    );
-                }
-            }
-
-            if (textValue != null &&
-                    textValue.length() > 0) {
-
-                message =
-                        textValue.toString();
-
-            } else if (bigTextValue != null &&
-                    bigTextValue.length() > 0) {
-
-                message =
-                        bigTextValue.toString();
-
-            } else if (lines != null &&
-                    lines.length > 0) {
-
-                StringBuilder builder =
-                        new StringBuilder();
-
+            if (textValue != null && textValue.length() > 0) {
+                message = textValue.toString();
+            } else if (bigTextValue != null && bigTextValue.length() > 0) {
+                message = bigTextValue.toString();
+            } else if (lines != null && lines.length > 0) {
+                StringBuilder builder = new StringBuilder();
                 for (CharSequence line : lines) {
-
                     if (line == null) continue;
-
-                    if (builder.length() > 0) {
-                        builder.append('\n');
-                    }
-
+                    if (builder.length() > 0) builder.append('\n');
                     builder.append(line);
                 }
-
-                if (builder.length() > 0) {
-                    message =
-                            builder.toString();
-                }
+                if (builder.length() > 0) message = builder.toString();
             }
         }
 
-        long timestamp =
-                postTime > 0
-                        ? postTime
-                        : System.currentTimeMillis();
+        long timestamp = postTime > 0 ? postTime : System.currentTimeMillis();
+        String eventKey = sbn.getKey() + "|" + timestamp;
 
-        String eventKey =
-                sbn.getKey()
-                        + "|"
-                        + timestamp;
+        DiagnosticLogger.log(
+                this,
+                "NOTIFICATION_PARSED",
+                "package=" + packageName
+                        + " title=" + DiagnosticLogger.truncate(title, 80)
+                        + " message=" + DiagnosticLogger.truncate(message, 120)
+        );
 
         synchronized (processedEvents) {
-
             if (processedEvents.contains(eventKey)) {
+                Log.d(TAG, "Duplicate event ignored: " + eventKey);
+                DiagnosticLogger.log(this, "MEMORY_DUPLICATE", "eventKey already processed");
+                return;
+            }
+            processedEvents.add(eventKey);
+            if (processedEvents.size() > 500) {
+                processedEvents.clear();
+                processedEvents.add(eventKey);
+            }
+        }
 
-                Log.d(
-                        TAG,
-                        "Duplicate event ignored: " +
-                                eventKey
-                );
-
-                DebugLogger.log(
-                        getApplicationContext(),
-                        "DUPLICATE_MEMORY",
-                        packageName
-                );
-
+        NotificationDatabase db = new NotificationDatabase(getApplicationContext());
+        try {
+            if (db.isRecentDuplicate(timestamp, packageName, title, message)) {
+                Log.d(TAG, "Recent duplicate ignored: " + packageName);
+                DiagnosticLogger.log(this, "DB_RECENT_DUPLICATE", "package=" + packageName);
+                DiagnosticLogger.status(this, "DUPLICATE_IGNORED");
                 return;
             }
 
-            processedEvents.add(eventKey);
-
-            if (processedEvents.size() > 500) {
-
-                processedEvents.clear();
-
-                processedEvents.add(
-                        eventKey
-                );
-            }
-        }
-
-        Log.d(
-                TAG,
-                "FINAL TITLE   = " + title
-        );
-
-        Log.d(
-                TAG,
-                "FINAL MESSAGE = " + message
-        );
-
-        Log.d(
-                TAG,
-                "EVENT KEY     = " + eventKey
-        );
-
-        DebugLogger.log(
-                getApplicationContext(),
-                "NOTIFICATION_PARSED",
-                "package=" + packageName
-                        + ", title=" + title
-        );
-
-        NotificationDatabase db =
-                new NotificationDatabase(
-                        getApplicationContext()
-                );
-
-        try {
-
-            if (db.isRecentDuplicate(
+            long insertedId = db.insert(
                     timestamp,
                     packageName,
                     title,
-                    message
-            )) {
+                    message,
+                    eventKey
+            );
 
-                Log.d(
-                        TAG,
-                        "Recent duplicate ignored: " +
-                                packageName
-                );
-
-                DebugLogger.log(
-                        getApplicationContext(),
-                        "DUPLICATE_DATABASE",
-                        packageName
-                );
-
-                DebugLogger.setStatus(
-                        getApplicationContext(),
-                        "DUPLICATE_DATABASE"
-                );
-
+            if (insertedId == -1L) {
+                Log.e(TAG, "Notification database insert failed/ignored");
+                DiagnosticLogger.log(this, "DB_INSERT_FAILED", "eventKey conflict or insert returned -1");
+                DiagnosticLogger.error(this, "Database insert returned -1");
+                DiagnosticLogger.status(this, "DB_INSERT_FAILED");
                 return;
             }
 
-            long insertedId =
-                    db.insert(
-                            timestamp,
-                            packageName,
-                            title,
-                            message,
-                            eventKey
-                    );
-
-            /*
-             * IMPORTANT:
-             *
-             * SQLite insertWithOnConflict()
-             * returns -1 when the insert was ignored.
-             */
-            if (insertedId == -1) {
-
-                Log.e(
-                        TAG,
-                        "Notification database INSERT FAILED"
-                );
-
-                DebugLogger.log(
-                        getApplicationContext(),
-                        "DATABASE_INSERT_FAILED",
-                        "eventKey=" + eventKey
-                );
-
-                DebugLogger.setStatus(
-                        getApplicationContext(),
-                        "DATABASE_INSERT_FAILED"
-                );
-
-                DebugLogger.setError(
-                        getApplicationContext(),
-                        "SQLite insert returned -1"
-                );
-
-                return;
-            }
-
-            Log.d(
-                    TAG,
-                    "Notification queued for sync. id=" +
-                            insertedId
-            );
-
-            DebugLogger.log(
-                    getApplicationContext(),
-                    "DATABASE_INSERT_OK",
-                    "id=" + insertedId
-            );
-
-            DebugLogger.setStatus(
-                    getApplicationContext(),
-                    "QUEUED"
-            );
-
-            DebugLogger.setError(
-                    getApplicationContext(),
-                    ""
-            );
-
-        } catch (Exception error) {
-
-            Log.e(
-                    TAG,
-                    "Database error",
-                    error
-            );
-
-            DebugLogger.log(
-                    getApplicationContext(),
-                    "DATABASE_EXCEPTION",
-                    error.toString()
-            );
-
-            DebugLogger.setStatus(
-                    getApplicationContext(),
-                    "DATABASE_EXCEPTION"
-            );
-
-            DebugLogger.setError(
-                    getApplicationContext(),
-                    error.toString()
-            );
-
+            Log.d(TAG, "Notification queued for sync. id=" + insertedId);
+            DiagnosticLogger.log(this, "DB_INSERT_OK", "id=" + insertedId + " package=" + packageName);
+            DiagnosticLogger.status(this, "QUEUED");
+        } catch (Exception e) {
+            DiagnosticLogger.log(this, "DB_ERROR", e.toString());
+            DiagnosticLogger.error(this, "Database: " + e);
+            DiagnosticLogger.status(this, "DB_ERROR");
+            Log.e(TAG, "Database error", e);
             return;
-
         } finally {
-
             db.close();
         }
 
-        enqueueSync();
+        try {
+            enqueueSync();
+            DiagnosticLogger.log(this, "SYNC_ENQUEUED", "notification id queued");
+            DiagnosticLogger.status(this, "SYNC_ENQUEUED");
+        } catch (Exception e) {
+            DiagnosticLogger.log(this, "SYNC_ENQUEUE_ERROR", e.toString());
+            DiagnosticLogger.error(this, "WorkManager enqueue: " + e);
+            DiagnosticLogger.status(this, "SYNC_ENQUEUE_ERROR");
+            Log.e(TAG, "Unable to enqueue sync", e);
+        }
 
-        DebugLogger.log(
-                getApplicationContext(),
-                "SYNC_ENQUEUED",
-                "WorkManager request submitted"
-        );
-
-        Log.d(
-                TAG,
-                "=============================="
-        );
+        Log.d(TAG, "==============================");
     }
 
     private void enqueueSync() {
-
-        try {
-
-            SyncWorker.enqueue(
-                    getApplicationContext()
-            );
-
-        } catch (Exception error) {
-
-            Log.e(
-                    TAG,
-                    "Failed to enqueue SyncWorker",
-                    error
-            );
-
-            DebugLogger.log(
-                    getApplicationContext(),
-                    "SYNC_ENQUEUE_FAILED",
-                    error.toString()
-            );
-
-            DebugLogger.setStatus(
-                    getApplicationContext(),
-                    "SYNC_ENQUEUE_FAILED"
-            );
-
-            DebugLogger.setError(
-                    getApplicationContext(),
-                    error.toString()
-            );
-        }
+        SyncWorker.enqueue(getApplicationContext());
     }
 
-    private String safePackageName(
-            String packageName
-    ) {
-
-        return (
-                packageName == null ||
-                        packageName.trim().isEmpty()
-        )
+    private String safePackageName(String packageName) {
+        return packageName == null || packageName.trim().isEmpty()
                 ? "Unknown_App"
                 : packageName;
     }

@@ -9,125 +9,68 @@ import android.database.sqlite.SQLiteOpenHelper;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Local SQLite queue for notification events.
- *
- * The database keeps pending/sent records and also provides
- * a short duplicate window for notification updates.
- */
+/** Local SQLite queue for notification events. */
 public class NotificationDatabase extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "notification_queue.db";
     private static final int DB_VERSION = 3;
     private static final String TABLE = "notifications";
-
-    private static final long DUPLICATE_WINDOW_MS =
-            2 * 60 * 1000L;
+    private static final long DUPLICATE_WINDOW_MS = 2 * 60 * 1000L;
 
     public NotificationDatabase(Context context) {
-        super(
-                context,
-                DB_NAME,
-                null,
-                DB_VERSION
-        );
+        super(context, DB_NAME, null, DB_VERSION);
     }
 
     @Override
     public void onCreate(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE " + TABLE + " ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "timestamp INTEGER NOT NULL,"
+                + "package_name TEXT NOT NULL,"
+                + "title TEXT NOT NULL,"
+                + "message TEXT NOT NULL,"
+                + "event_key TEXT,"
+                + "status INTEGER NOT NULL DEFAULT 0"
+                + ")");
 
-        db.execSQL(
-                "CREATE TABLE " + TABLE + " (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "timestamp INTEGER NOT NULL," +
-                        "package_name TEXT NOT NULL," +
-                        "title TEXT NOT NULL," +
-                        "message TEXT NOT NULL," +
-                        "event_key TEXT," +
-                        "status INTEGER NOT NULL DEFAULT 0" +
-                        ")"
-        );
-
-        db.execSQL(
-                "CREATE INDEX idx_notifications_status " +
-                        "ON " + TABLE + "(status, id)"
-        );
-
-        db.execSQL(
-                "CREATE UNIQUE INDEX idx_notifications_event_key " +
-                        "ON " + TABLE + "(event_key) " +
-                        "WHERE event_key IS NOT NULL"
-        );
-
-        db.execSQL(
-                "CREATE INDEX idx_notifications_content_time " +
-                        "ON " + TABLE +
-                        "(package_name, title, message, timestamp)"
-        );
+        db.execSQL("CREATE INDEX idx_notifications_status ON " + TABLE + "(status, id)");
+        db.execSQL("CREATE UNIQUE INDEX idx_notifications_event_key ON " + TABLE
+                + "(event_key) WHERE event_key IS NOT NULL");
+        db.execSQL("CREATE INDEX idx_notifications_content_time ON " + TABLE
+                + "(package_name, title, message, timestamp)");
     }
 
     @Override
-    public void onUpgrade(
-            SQLiteDatabase db,
-            int oldVersion,
-            int newVersion
-    ) {
-
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
-
-            db.execSQL(
-                    "ALTER TABLE " + TABLE +
-                            " ADD COLUMN event_key TEXT"
-            );
-
-            db.execSQL(
-                    "CREATE UNIQUE INDEX idx_notifications_event_key " +
-                            "ON " + TABLE + "(event_key) " +
-                            "WHERE event_key IS NOT NULL"
-            );
+            db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN event_key TEXT");
+            db.execSQL("CREATE UNIQUE INDEX idx_notifications_event_key ON " + TABLE
+                    + "(event_key) WHERE event_key IS NOT NULL");
         }
-
         if (oldVersion < 3) {
-
-            db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS " +
-                            "idx_notifications_content_time " +
-                            "ON " + TABLE +
-                            "(package_name, title, message, timestamp)"
-            );
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_notifications_content_time ON " + TABLE
+                    + "(package_name, title, message, timestamp)");
         }
     }
 
-    /**
-     * Checks whether the same notification content was
-     * stored within the recent duplicate window.
-     */
     public synchronized boolean isRecentDuplicate(
             long timestamp,
             String packageName,
             String title,
-            String message
-    ) {
+            String message) {
 
         if (packageName == null) packageName = "";
         if (title == null) title = "";
         if (message == null) message = "";
 
-        long lowerBound =
-                timestamp - DUPLICATE_WINDOW_MS;
-
+        long lowerBound = timestamp - DUPLICATE_WINDOW_MS;
         Cursor cursor = null;
-
         try {
-
             cursor = getReadableDatabase().query(
                     TABLE,
                     new String[]{"id"},
-                    "package_name = ? " +
-                            "AND title = ? " +
-                            "AND message = ? " +
-                            "AND timestamp >= ? " +
-                            "AND timestamp <= ?",
+                    "package_name = ? AND title = ? AND message = ? "
+                            + "AND timestamp >= ? AND timestamp <= ?",
                     new String[]{
                             packageName,
                             title,
@@ -140,201 +83,90 @@ public class NotificationDatabase extends SQLiteOpenHelper {
                     "timestamp DESC",
                     "1"
             );
-
             return cursor.moveToFirst();
-
         } finally {
-
-            if (cursor != null) {
-                cursor.close();
-            }
+            if (cursor != null) cursor.close();
         }
     }
 
-    /**
-     * Inserts one notification into the local queue.
-     *
-     * IMPORTANT:
-     * The returned row ID is now checked by NotificationService.
-     * -1 means SQLite ignored the insert, normally because
-     * of the unique event_key constraint.
-     */
     public synchronized long insert(
             long timestamp,
             String packageName,
             String title,
             String message,
-            String eventKey
-    ) {
+            String eventKey) {
 
-        ContentValues values =
-                new ContentValues();
+        ContentValues values = new ContentValues();
+        values.put("timestamp", timestamp);
+        values.put("package_name", packageName == null ? "Unknown_App" : packageName);
+        values.put("title", title == null ? "Tanpa Judul" : title);
+        values.put("message", message == null ? "Tanpa Isi" : message);
+        values.put("event_key", eventKey);
+        values.put("status", 0);
 
-        values.put(
-                "timestamp",
-                timestamp
+        return getWritableDatabase().insertWithOnConflict(
+                TABLE,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_IGNORE
         );
-
-        values.put(
-                "package_name",
-                packageName == null
-                        ? "Unknown_App"
-                        : packageName
-        );
-
-        values.put(
-                "title",
-                title == null
-                        ? "Tanpa Judul"
-                        : title
-        );
-
-        values.put(
-                "message",
-                message == null
-                        ? "Tanpa Isi"
-                        : message
-        );
-
-        values.put(
-                "event_key",
-                eventKey
-        );
-
-        values.put(
-                "status",
-                0
-        );
-
-        return getWritableDatabase()
-                .insertWithOnConflict(
-                        TABLE,
-                        null,
-                        values,
-                        SQLiteDatabase.CONFLICT_IGNORE
-                );
     }
 
-    public synchronized List<NotificationRecord> getPending(
-            int limit
-    ) {
+    public synchronized List<NotificationRecord> getPending(int limit) {
+        List<NotificationRecord> result = new ArrayList<>();
 
-        List<NotificationRecord> result =
-                new ArrayList<>();
-
-        try (Cursor cursor =
-                     getReadableDatabase().query(
-                             TABLE,
-                             new String[]{
-                                     "id",
-                                     "timestamp",
-                                     "package_name",
-                                     "title",
-                                     "message"
-                             },
-                             "status = 0",
-                             null,
-                             null,
-                             null,
-                             "id ASC",
-                             String.valueOf(limit)
-                     )) {
-
+        try (Cursor cursor = getReadableDatabase().query(
+                TABLE,
+                new String[]{"id", "timestamp", "package_name", "title", "message"},
+                "status = 0",
+                null,
+                null,
+                null,
+                "id ASC",
+                String.valueOf(limit)
+        )) {
             while (cursor.moveToNext()) {
-
-                result.add(
-                        new NotificationRecord(
-                                cursor.getLong(0),
-                                cursor.getLong(1),
-                                cursor.getString(2),
-                                cursor.getString(3),
-                                cursor.getString(4)
-                        )
-                );
+                result.add(new NotificationRecord(
+                        cursor.getLong(0),
+                        cursor.getLong(1),
+                        cursor.getString(2),
+                        cursor.getString(3),
+                        cursor.getString(4)
+                ));
             }
         }
-
         return result;
     }
 
     public synchronized int getPendingCount() {
-
-        Cursor cursor = null;
-
-        try {
-
-            cursor =
-                    getReadableDatabase().rawQuery(
-                            "SELECT COUNT(*) FROM " +
-                                    TABLE +
-                                    " WHERE status = 0",
-                            null
-                    );
-
-            if (cursor.moveToFirst()) {
-                return cursor.getInt(0);
-            }
-
-            return 0;
-
-        } finally {
-
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
+        return countByStatus(0);
     }
 
     public synchronized int getSentCount() {
+        return countByStatus(1);
+    }
 
-        Cursor cursor = null;
-
-        try {
-
-            cursor =
-                    getReadableDatabase().rawQuery(
-                            "SELECT COUNT(*) FROM " +
-                                    TABLE +
-                                    " WHERE status = 1",
-                            null
-                    );
-
-            if (cursor.moveToFirst()) {
-                return cursor.getInt(0);
-            }
-
-            return 0;
-
-        } finally {
-
-            if (cursor != null) {
-                cursor.close();
-            }
+    private int countByStatus(int status) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM " + TABLE + " WHERE status = ?",
+                new String[]{String.valueOf(status)}
+        )) {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
         }
     }
 
     public synchronized void markSent(long id) {
-
-        ContentValues values =
-                new ContentValues();
-
-        values.put(
-                "status",
-                1
-        );
-
+        ContentValues values = new ContentValues();
+        values.put("status", 1);
         getWritableDatabase().update(
                 TABLE,
                 values,
                 "id = ?",
-                new String[]{
-                        String.valueOf(id)
-                }
+                new String[]{String.valueOf(id)}
         );
     }
 
     public static class NotificationRecord {
-
         public final long id;
         public final long timestamp;
         public final String packageName;
@@ -346,9 +178,7 @@ public class NotificationDatabase extends SQLiteOpenHelper {
                 long timestamp,
                 String packageName,
                 String title,
-                String message
-        ) {
-
+                String message) {
             this.id = id;
             this.timestamp = timestamp;
             this.packageName = packageName;
