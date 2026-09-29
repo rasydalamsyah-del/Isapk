@@ -21,27 +21,21 @@ public class NotificationDatabase extends SQLiteOpenHelper {
     private static final int DB_VERSION = 3;
     private static final String TABLE = "notifications";
 
-    /*
-     * Short window used only for notification-update duplication.
-     *
-     * Example:
-     * 14:00 Bund Ayang -> Keren
-     * 14:00:15 Telegram updates the notification and sends
-     *         Bund Ayang -> Keren again
-     *
-     * The second one is treated as an update.
-     *
-     * A genuinely repeated message after a longer period
-     * is still allowed.
-     */
-    private static final long DUPLICATE_WINDOW_MS = 2 * 60 * 1000L;
+    private static final long DUPLICATE_WINDOW_MS =
+            2 * 60 * 1000L;
 
     public NotificationDatabase(Context context) {
-        super(context, DB_NAME, null, DB_VERSION);
+        super(
+                context,
+                DB_NAME,
+                null,
+                DB_VERSION
+        );
     }
 
     @Override
     public void onCreate(SQLiteDatabase db) {
+
         db.execSQL(
                 "CREATE TABLE " + TABLE + " (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -78,7 +72,9 @@ public class NotificationDatabase extends SQLiteOpenHelper {
             int oldVersion,
             int newVersion
     ) {
+
         if (oldVersion < 2) {
+
             db.execSQL(
                     "ALTER TABLE " + TABLE +
                             " ADD COLUMN event_key TEXT"
@@ -92,6 +88,7 @@ public class NotificationDatabase extends SQLiteOpenHelper {
         }
 
         if (oldVersion < 3) {
+
             db.execSQL(
                     "CREATE INDEX IF NOT EXISTS " +
                             "idx_notifications_content_time " +
@@ -102,10 +99,8 @@ public class NotificationDatabase extends SQLiteOpenHelper {
     }
 
     /**
-     * Returns true when the same package/title/message was already
-     * stored very recently.
-     *
-     * This is specifically for notification update duplication.
+     * Checks whether the same notification content was
+     * stored within the recent duplicate window.
      */
     public synchronized boolean isRecentDuplicate(
             long timestamp,
@@ -113,6 +108,7 @@ public class NotificationDatabase extends SQLiteOpenHelper {
             String title,
             String message
     ) {
+
         if (packageName == null) packageName = "";
         if (title == null) title = "";
         if (message == null) message = "";
@@ -123,6 +119,7 @@ public class NotificationDatabase extends SQLiteOpenHelper {
         Cursor cursor = null;
 
         try {
+
             cursor = getReadableDatabase().query(
                     TABLE,
                     new String[]{"id"},
@@ -147,6 +144,7 @@ public class NotificationDatabase extends SQLiteOpenHelper {
             return cursor.moveToFirst();
 
         } finally {
+
             if (cursor != null) {
                 cursor.close();
             }
@@ -154,8 +152,12 @@ public class NotificationDatabase extends SQLiteOpenHelper {
     }
 
     /**
-     * Inserts a notification unless the exact Android eventKey
-     * already exists.
+     * Inserts one notification into the local queue.
+     *
+     * IMPORTANT:
+     * The returned row ID is now checked by NotificationService.
+     * -1 means SQLite ignored the insert, normally because
+     * of the unique event_key constraint.
      */
     public synchronized long insert(
             long timestamp,
@@ -164,52 +166,82 @@ public class NotificationDatabase extends SQLiteOpenHelper {
             String message,
             String eventKey
     ) {
-        ContentValues values = new ContentValues();
 
-        values.put("timestamp", timestamp);
+        ContentValues values =
+                new ContentValues();
+
+        values.put(
+                "timestamp",
+                timestamp
+        );
+
         values.put(
                 "package_name",
-                packageName == null ? "Unknown_App" : packageName
+                packageName == null
+                        ? "Unknown_App"
+                        : packageName
         );
+
         values.put(
                 "title",
-                title == null ? "Tanpa Judul" : title
+                title == null
+                        ? "Tanpa Judul"
+                        : title
         );
+
         values.put(
                 "message",
-                message == null ? "Tanpa Isi" : message
+                message == null
+                        ? "Tanpa Isi"
+                        : message
         );
-        values.put("event_key", eventKey);
-        values.put("status", 0);
 
-        return getWritableDatabase().insertWithOnConflict(
-                TABLE,
-                null,
-                values,
-                SQLiteDatabase.CONFLICT_IGNORE
+        values.put(
+                "event_key",
+                eventKey
         );
+
+        values.put(
+                "status",
+                0
+        );
+
+        return getWritableDatabase()
+                .insertWithOnConflict(
+                        TABLE,
+                        null,
+                        values,
+                        SQLiteDatabase.CONFLICT_IGNORE
+                );
     }
 
-    public synchronized List<NotificationRecord> getPending(int limit) {
-        List<NotificationRecord> result = new ArrayList<>();
+    public synchronized List<NotificationRecord> getPending(
+            int limit
+    ) {
 
-        try (Cursor cursor = getReadableDatabase().query(
-                TABLE,
-                new String[]{
-                        "id",
-                        "timestamp",
-                        "package_name",
-                        "title",
-                        "message"
-                },
-                "status = 0",
-                null,
-                null,
-                null,
-                "id ASC",
-                String.valueOf(limit)
-        )) {
+        List<NotificationRecord> result =
+                new ArrayList<>();
+
+        try (Cursor cursor =
+                     getReadableDatabase().query(
+                             TABLE,
+                             new String[]{
+                                     "id",
+                                     "timestamp",
+                                     "package_name",
+                                     "title",
+                                     "message"
+                             },
+                             "status = 0",
+                             null,
+                             null,
+                             null,
+                             "id ASC",
+                             String.valueOf(limit)
+                     )) {
+
             while (cursor.moveToNext()) {
+
                 result.add(
                         new NotificationRecord(
                                 cursor.getLong(0),
@@ -225,15 +257,79 @@ public class NotificationDatabase extends SQLiteOpenHelper {
         return result;
     }
 
+    public synchronized int getPendingCount() {
+
+        Cursor cursor = null;
+
+        try {
+
+            cursor =
+                    getReadableDatabase().rawQuery(
+                            "SELECT COUNT(*) FROM " +
+                                    TABLE +
+                                    " WHERE status = 0",
+                            null
+                    );
+
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0);
+            }
+
+            return 0;
+
+        } finally {
+
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    public synchronized int getSentCount() {
+
+        Cursor cursor = null;
+
+        try {
+
+            cursor =
+                    getReadableDatabase().rawQuery(
+                            "SELECT COUNT(*) FROM " +
+                                    TABLE +
+                                    " WHERE status = 1",
+                            null
+                    );
+
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0);
+            }
+
+            return 0;
+
+        } finally {
+
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
     public synchronized void markSent(long id) {
-        ContentValues values = new ContentValues();
-        values.put("status", 1);
+
+        ContentValues values =
+                new ContentValues();
+
+        values.put(
+                "status",
+                1
+        );
 
         getWritableDatabase().update(
                 TABLE,
                 values,
                 "id = ?",
-                new String[]{String.valueOf(id)}
+                new String[]{
+                        String.valueOf(id)
+                }
         );
     }
 
@@ -252,6 +348,7 @@ public class NotificationDatabase extends SQLiteOpenHelper {
                 String title,
                 String message
         ) {
+
             this.id = id;
             this.timestamp = timestamp;
             this.packageName = packageName;
