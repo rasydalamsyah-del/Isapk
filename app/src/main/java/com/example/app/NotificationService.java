@@ -12,48 +12,87 @@ import java.util.Set;
 /**
  * Receives Android notifications and persists them before attempting sync.
  *
- * Combines:
- * - notification diagnostics/logging
- * - in-memory duplicate protection
- * - database recent-duplicate protection
- * - local queue before network synchronization
+ * Diagnostic additions:
+ * - records service connection
+ * - records notification reception
+ * - records duplicate filtering
+ * - verifies database insert result
+ * - records sync enqueue
  */
-public class NotificationService extends NotificationListenerService {
+public class NotificationService
+        extends NotificationListenerService {
 
-    private static final String TAG = "NotificationDebug";
+    private static final String TAG =
+            "NotificationDebug";
 
-    /*
-     * Prevents duplicate callbacks during the same process lifetime.
-     */
-    private final Set<String> processedEvents = new HashSet<>();
+    private final Set<String> processedEvents =
+            new HashSet<>();
 
     @Override
     public void onListenerConnected() {
+
         super.onListenerConnected();
 
-        Log.d(TAG, "NotificationListener connected");
+        Log.d(
+                TAG,
+                "NotificationListener connected"
+        );
 
-        // Drain anything that accumulated while offline.
+        DebugLogger.log(
+                getApplicationContext(),
+                "SERVICE_CONNECTED",
+                "NotificationListenerService connected"
+        );
+
+        DebugLogger.setStatus(
+                getApplicationContext(),
+                "SERVICE_CONNECTED"
+        );
+
         enqueueSync();
     }
 
     @Override
-    public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null) return;
+    public void onNotificationPosted(
+            StatusBarNotification sbn
+    ) {
 
-        Notification notification = sbn.getNotification();
-        if (notification == null) return;
+        if (sbn == null) {
+
+            DebugLogger.log(
+                    getApplicationContext(),
+                    "NOTIFICATION_NULL",
+                    "StatusBarNotification = null"
+            );
+
+            return;
+        }
+
+        Notification notification =
+                sbn.getNotification();
+
+        if (notification == null) {
+
+            DebugLogger.log(
+                    getApplicationContext(),
+                    "NOTIFICATION_OBJECT_NULL",
+                    "Notification object = null"
+            );
+
+            return;
+        }
 
         final String packageName =
-                safePackageName(sbn.getPackageName());
+                safePackageName(
+                        sbn.getPackageName()
+                );
 
-        final Bundle extras = notification.extras;
+        final Bundle extras =
+                notification.extras;
 
-        final long postTime = sbn.getPostTime();
+        final long postTime =
+                sbn.getPostTime();
 
-        /*
-         * Diagnostic information.
-         */
         Log.d(TAG, "==============================");
         Log.d(TAG, "NOTIFICATION POSTED / UPDATED");
         Log.d(TAG, "packageName = " + packageName);
@@ -62,86 +101,111 @@ public class NotificationService extends NotificationListenerService {
         Log.d(TAG, "id         = " + sbn.getId());
         Log.d(TAG, "tag        = " + sbn.getTag());
 
+        DebugLogger.log(
+                getApplicationContext(),
+                "NOTIFICATION_RECEIVED",
+                "package=" + packageName
+        );
+
         String title = "Tanpa Judul";
         String message = "Tanpa Isi";
 
         if (extras != null) {
 
-            /*
-             * TITLE
-             */
             CharSequence titleValue =
-                    extras.getCharSequence(Notification.EXTRA_TITLE);
+                    extras.getCharSequence(
+                            Notification.EXTRA_TITLE
+                    );
 
             if (titleValue != null &&
                     titleValue.length() > 0) {
-                title = titleValue.toString();
+
+                title =
+                        titleValue.toString();
             }
 
-            Log.d(TAG, "EXTRA_TITLE = " + title);
+            Log.d(
+                    TAG,
+                    "EXTRA_TITLE = " + title
+            );
 
-            /*
-             * EXTRA_TEXT
-             */
             CharSequence textValue =
-                    extras.getCharSequence(Notification.EXTRA_TEXT);
+                    extras.getCharSequence(
+                            Notification.EXTRA_TEXT
+                    );
 
-            Log.d(TAG, "EXTRA_TEXT = " +
-                    (textValue == null
-                            ? "NULL"
-                            : textValue.toString()));
+            Log.d(
+                    TAG,
+                    "EXTRA_TEXT = " +
+                            (
+                                    textValue == null
+                                            ? "NULL"
+                                            : textValue.toString()
+                            )
+            );
 
-            /*
-             * EXTRA_BIG_TEXT
-             */
             CharSequence bigTextValue =
-                    extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+                    extras.getCharSequence(
+                            Notification.EXTRA_BIG_TEXT
+                    );
 
-            Log.d(TAG, "EXTRA_BIG_TEXT = " +
-                    (bigTextValue == null
-                            ? "NULL"
-                            : bigTextValue.toString()));
+            Log.d(
+                    TAG,
+                    "EXTRA_BIG_TEXT = " +
+                            (
+                                    bigTextValue == null
+                                            ? "NULL"
+                                            : bigTextValue.toString()
+                            )
+            );
 
-            /*
-             * EXTRA_TEXT_LINES
-             */
             CharSequence[] lines =
                     extras.getCharSequenceArray(
-                            Notification.EXTRA_TEXT_LINES);
+                            Notification.EXTRA_TEXT_LINES
+                    );
 
             if (lines == null) {
 
-                Log.d(TAG, "EXTRA_TEXT_LINES = NULL");
+                Log.d(
+                        TAG,
+                        "EXTRA_TEXT_LINES = NULL"
+                );
 
             } else {
 
-                Log.d(TAG,
-                        "EXTRA_TEXT_LINES count = "
-                                + lines.length);
+                Log.d(
+                        TAG,
+                        "EXTRA_TEXT_LINES count = " +
+                                lines.length
+                );
 
-                for (int i = 0; i < lines.length; i++) {
+                for (int i = 0;
+                     i < lines.length;
+                     i++) {
 
-                    Log.d(TAG,
+                    Log.d(
+                            TAG,
                             "LINE[" + i + "] = " +
-                                    (lines[i] == null
-                                            ? "NULL"
-                                            : lines[i].toString()));
+                                    (
+                                            lines[i] == null
+                                                    ? "NULL"
+                                                    : lines[i].toString()
+                                    )
+                    );
                 }
             }
 
-            /*
-             * Prefer normal notification text.
-             * Fall back to BIG_TEXT and then TEXT_LINES.
-             */
             if (textValue != null &&
                     textValue.length() > 0) {
 
-                message = textValue.toString();
+                message =
+                        textValue.toString();
 
             } else if (bigTextValue != null &&
                     bigTextValue.length() > 0) {
 
-                message = bigTextValue.toString();
+                message =
+                        bigTextValue.toString();
 
             } else if (lines != null &&
                     lines.length > 0) {
@@ -161,124 +225,254 @@ public class NotificationService extends NotificationListenerService {
                 }
 
                 if (builder.length() > 0) {
-                    message = builder.toString();
+                    message =
+                            builder.toString();
                 }
             }
         }
 
-        /*
-         * Use notification post time when available.
-         */
         long timestamp =
                 postTime > 0
                         ? postTime
                         : System.currentTimeMillis();
 
-        /*
-         * Android notification identity.
-         *
-         * Same notification key + same timestamp represents
-         * the same notification event.
-         */
         String eventKey =
-                sbn.getKey() + "|" + timestamp;
+                sbn.getKey()
+                        + "|"
+                        + timestamp;
 
-        /*
-         * Fast in-memory duplicate protection.
-         */
         synchronized (processedEvents) {
 
             if (processedEvents.contains(eventKey)) {
-                Log.d(TAG,
-                        "Duplicate event ignored: "
-                                + eventKey);
+
+                Log.d(
+                        TAG,
+                        "Duplicate event ignored: " +
+                                eventKey
+                );
+
+                DebugLogger.log(
+                        getApplicationContext(),
+                        "DUPLICATE_MEMORY",
+                        packageName
+                );
+
                 return;
             }
 
             processedEvents.add(eventKey);
 
-            /*
-             * Prevent unlimited memory growth.
-             * The database remains the permanent duplicate protection.
-             */
             if (processedEvents.size() > 500) {
+
                 processedEvents.clear();
-                processedEvents.add(eventKey);
+
+                processedEvents.add(
+                        eventKey
+                );
             }
         }
 
-        /*
-         * Diagnostic final values.
-         */
-        Log.d(TAG, "FINAL TITLE   = " + title);
-        Log.d(TAG, "FINAL MESSAGE = " + message);
-        Log.d(TAG, "EVENT KEY     = " + eventKey);
+        Log.d(
+                TAG,
+                "FINAL TITLE   = " + title
+        );
+
+        Log.d(
+                TAG,
+                "FINAL MESSAGE = " + message
+        );
+
+        Log.d(
+                TAG,
+                "EVENT KEY     = " + eventKey
+        );
+
+        DebugLogger.log(
+                getApplicationContext(),
+                "NOTIFICATION_PARSED",
+                "package=" + packageName
+                        + ", title=" + title
+        );
 
         NotificationDatabase db =
                 new NotificationDatabase(
-                        getApplicationContext());
+                        getApplicationContext()
+                );
 
         try {
 
-            /*
-             * Do not deduplicate by message forever.
-             *
-             * The database only rejects a matching notification
-             * that appeared recently.
-             *
-             * This allows a later notification containing the same
-             * text to be stored normally.
-             */
             if (db.isRecentDuplicate(
                     timestamp,
                     packageName,
                     title,
-                    message)) {
+                    message
+            )) {
 
-                Log.d(TAG,
-                        "Recent duplicate ignored: "
-                                + packageName);
+                Log.d(
+                        TAG,
+                        "Recent duplicate ignored: " +
+                                packageName
+                );
+
+                DebugLogger.log(
+                        getApplicationContext(),
+                        "DUPLICATE_DATABASE",
+                        packageName
+                );
+
+                DebugLogger.setStatus(
+                        getApplicationContext(),
+                        "DUPLICATE_DATABASE"
+                );
 
                 return;
             }
 
+            long insertedId =
+                    db.insert(
+                            timestamp,
+                            packageName,
+                            title,
+                            message,
+                            eventKey
+                    );
+
             /*
-             * Queue first.
+             * IMPORTANT:
              *
-             * No network operation happens here.
-             * SyncWorker handles network delivery later.
+             * SQLite insertWithOnConflict()
+             * returns -1 when the insert was ignored.
              */
-            db.insert(
-                    timestamp,
-                    packageName,
-                    title,
-                    message,
-                    eventKey
+            if (insertedId == -1) {
+
+                Log.e(
+                        TAG,
+                        "Notification database INSERT FAILED"
+                );
+
+                DebugLogger.log(
+                        getApplicationContext(),
+                        "DATABASE_INSERT_FAILED",
+                        "eventKey=" + eventKey
+                );
+
+                DebugLogger.setStatus(
+                        getApplicationContext(),
+                        "DATABASE_INSERT_FAILED"
+                );
+
+                DebugLogger.setError(
+                        getApplicationContext(),
+                        "SQLite insert returned -1"
+                );
+
+                return;
+            }
+
+            Log.d(
+                    TAG,
+                    "Notification queued for sync. id=" +
+                            insertedId
             );
 
-            Log.d(TAG,
-                    "Notification queued for sync");
+            DebugLogger.log(
+                    getApplicationContext(),
+                    "DATABASE_INSERT_OK",
+                    "id=" + insertedId
+            );
+
+            DebugLogger.setStatus(
+                    getApplicationContext(),
+                    "QUEUED"
+            );
+
+            DebugLogger.setError(
+                    getApplicationContext(),
+                    ""
+            );
+
+        } catch (Exception error) {
+
+            Log.e(
+                    TAG,
+                    "Database error",
+                    error
+            );
+
+            DebugLogger.log(
+                    getApplicationContext(),
+                    "DATABASE_EXCEPTION",
+                    error.toString()
+            );
+
+            DebugLogger.setStatus(
+                    getApplicationContext(),
+                    "DATABASE_EXCEPTION"
+            );
+
+            DebugLogger.setError(
+                    getApplicationContext(),
+                    error.toString()
+            );
+
+            return;
 
         } finally {
 
             db.close();
         }
 
-        /*
-         * Let WorkManager / SyncWorker handle network delivery.
-         */
         enqueueSync();
 
-        Log.d(TAG, "==============================");
+        DebugLogger.log(
+                getApplicationContext(),
+                "SYNC_ENQUEUED",
+                "WorkManager request submitted"
+        );
+
+        Log.d(
+                TAG,
+                "=============================="
+        );
     }
 
     private void enqueueSync() {
-        SyncWorker.enqueue(
-                getApplicationContext());
+
+        try {
+
+            SyncWorker.enqueue(
+                    getApplicationContext()
+            );
+
+        } catch (Exception error) {
+
+            Log.e(
+                    TAG,
+                    "Failed to enqueue SyncWorker",
+                    error
+            );
+
+            DebugLogger.log(
+                    getApplicationContext(),
+                    "SYNC_ENQUEUE_FAILED",
+                    error.toString()
+            );
+
+            DebugLogger.setStatus(
+                    getApplicationContext(),
+                    "SYNC_ENQUEUE_FAILED"
+            );
+
+            DebugLogger.setError(
+                    getApplicationContext(),
+                    error.toString()
+            );
+        }
     }
 
     private String safePackageName(
-            String packageName) {
+            String packageName
+    ) {
 
         return (
                 packageName == null ||
