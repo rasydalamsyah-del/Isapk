@@ -259,12 +259,36 @@ public class ApiHelper {
                 return false;
             }
 
-            // Code.gs notification mengembalikan JSON dengan status=success.
+            // Apps Script dapat mengembalikan dua bentuk response sukses:
+            //
+            // 1. JSON:
+            //    {"status":"success","action":"notification",...}
+            //
+            // 2. Plain text:
+            //    OK
+            //
             // HTTP 200 saja TIDAK cukup karena doPost() dapat mengembalikan
             // {"status":"error",...} dengan HTTP 200.
+            String appsScriptTrimmed =
+                    appsScriptResponse == null
+                            ? ""
+                            : appsScriptResponse.trim();
+
+            // Plain "OK" adalah response sukses yang valid dari backend
+            // yang sedang digunakan. Hanya string "OK" yang diterima;
+            // response plain text lainnya tetap dianggap gagal.
+            if ("OK".equalsIgnoreCase(appsScriptTrimmed)) {
+                logDiagnostic(
+                        context,
+                        "API_ACCEPTED",
+                        "Apps Script response=OK"
+                );
+                return true;
+            }
+
             try {
                 JSONObject appsScriptJson =
-                        new JSONObject(appsScriptResponse);
+                        new JSONObject(appsScriptTrimmed);
 
                 String status =
                         appsScriptJson.optString("status", "");
@@ -302,7 +326,7 @@ public class ApiHelper {
 
             } catch (Exception parseError) {
                 String detail =
-                        "Apps Script response bukan JSON sukses: "
+                        "Apps Script response bukan JSON sukses atau OK: "
                                 + limitForLog(appsScriptResponse);
 
                 logDiagnostic(
