@@ -140,6 +140,17 @@ public class CameraService extends Service implements LifecycleOwner {
 
     private void startCameraAndCapture() {
 
+        // Kirim status RECEIVED ke GAS sebelum ambil foto.
+        // Code.gs menolak upload jika status bukan RECEIVED.
+        final String currentRequestId = requestId;
+        if (currentRequestId != null && !currentRequestId.trim().isEmpty()) {
+            new Thread(() ->
+                    ApiHelper.updateCameraRequestStatus(
+                            currentRequestId, "RECEIVED"
+                    )
+            ).start();
+        }
+
         ListenableFuture<ProcessCameraProvider> future =
                 ProcessCameraProvider.getInstance(this);
 
