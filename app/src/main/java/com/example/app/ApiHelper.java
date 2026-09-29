@@ -16,41 +16,38 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * API helper untuk:
+ * API helper.
  *
- * 1. NOTIFIKASI
- *    Android -> Cloudflare Worker -> Google Apps Script
+ * SEMUA jalur (notifikasi, kamera, lokasi) sekarang lewat satu
+ * pintu: Cloudflare Worker (WORKER_URL).
  *
- * 2. KAMERA
- *    Android -> Google Apps Script
+ * Worker bertindak sebagai proxy TRANSPARAN ke Google Apps
+ * Script: ia mengikuti redirect 302 yang selalu dikirim GAS Web
+ * App, lalu meneruskan body & status ASLI dari GAS apa adanya
+ * (baik untuk GET maupun POST) — tidak dibungkus format lain.
  *
- * PENTING:
- * - Jalur notifikasi dan kamera sengaja dipisahkan.
- * - Jangan mengubah GAS_URL untuk kebutuhan Worker.
- * - Kamera tetap menggunakan GAS_URL.
+ * Artinya bentuk response yang diterima di file ini SAMA PERSIS
+ * seperti memanggil GAS langsung dengan redirect diikuti secara
+ * manual, jadi semua parsing JSON di bawah membaca field
+ * top-level langsung (mis. "status", "request"), TIDAK perlu
+ * membongkar bungkusan tambahan apa pun.
+ *
+ * Endpoint GAS langsung (tanpa Worker) sengaja tidak lagi
+ * dipakai di sini, supaya ada satu titik kontrol untuk masalah
+ * 302/retry, dan supaya tidak ada dua pola respons berbeda yang
+ * harus dijaga konsisten secara manual.
  */
 public class ApiHelper {
 
     private static final String TAG = "ApiHelper";
 
     // =========================================================
-    // NOTIFICATION ROUTE
+    // SATU-SATUNYA ENDPOINT
     // Android -> Cloudflare Worker -> Apps Script
     // =========================================================
 
     private static final String WORKER_URL =
             "https://telegram-notification-bot.nadimmakarim641.workers.dev";
-
-    // =========================================================
-    // CAMERA ROUTE
-    // Android -> Apps Script
-    //
-    // JANGAN diganti menjadi WORKER_URL.
-    // Kamera yang sudah berhasil tetap menggunakan URL ini.
-    // =========================================================
-
-    private static final String GAS_URL =
-            "https://script.google.com/macros/s/AKfycbw5HSVm2lQm4nVr-xZArwS8tbYL9fYYs7EVV4MbhxwY03jdHbI5_r0K6ZDk5QiIRfIZ8A/exec";
 
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 20000;
@@ -64,19 +61,14 @@ public class ApiHelper {
     // =========================================================
 
     /**
-     * Mengirim satu notifikasi:
+     * Mengirim satu notifikasi.
      *
-     * Android
-     *   -> Cloudflare Worker
-     *   -> Google Apps Script
+     * Android -> Worker -> Apps Script (doPost, action=notification)
+     * -> handleAndroidRequest() di Code.gs
      *
-     * Worker sudah diuji dan mengembalikan:
-     *
-     * worker: OK
-     * appsScriptStatus: 200
-     * appsScriptResponse: OK
-     *
-     * Fungsi ini TIDAK menggunakan GAS_URL secara langsung.
+     * Worker meneruskan body & status ASLI dari GAS, jadi respons
+     * di sini persis:
+     * {"status":"success","action":"notification","packageName":"..."}
      */
     public static boolean sendNotificationToSheet(
             android.content.Context context,
@@ -93,7 +85,7 @@ public class ApiHelper {
 
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
-            conn.setInstanceFollowRedirects(false);
+            conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty(
                     "Content-Type",
                     "application/json; charset=utf-8"
@@ -132,51 +124,27 @@ public class ApiHelper {
 
             int responseCode = conn.getResponseCode();
 
-            InputStream responseStream;
-            if (responseCode >= 200 && responseCode < 300) {
-                responseStream = conn.getInputStream();
-            } else {
-                responseStream = conn.getErrorStream();
-            }
+            InputStream responseStream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
 
             String responseBody = readResponse(responseStream);
 
             Log.d(
                     TAG,
-                    "Notification Worker response: "
+                    "Notification response: "
                             + responseCode
                             + " body="
                             + responseBody
             );
-
-            if (responseCode >= 300 && responseCode < 400) {
-                String location = conn.getHeaderField("Location");
-
-                String detail =
-                        "HTTP=" + responseCode
-                                + ", redirect=" + (location == null ? "" : location);
-
-                logDiagnostic(
-                        context,
-                        "API_REDIRECT_REJECTED",
-                        detail
-                );
-
-                Log.e(TAG, "Notification redirect rejected: " + detail);
-                return false;
-            }
 
             if (responseCode < 200 || responseCode >= 300) {
                 String detail =
                         "HTTP=" + responseCode
                                 + ", body=" + limitForLog(responseBody);
 
-                logDiagnostic(
-                        context,
-                        "API_HTTP_FAILED",
-                        detail
-                );
-
+                logDiagnostic(context, "API_HTTP_FAILED", detail);
                 Log.e(TAG, "Notification HTTP failed: " + detail);
                 return false;
             }
@@ -185,184 +153,56 @@ public class ApiHelper {
                 logDiagnostic(
                         context,
                         "API_RESPONSE_REJECTED",
-                        "HTTP=2xx tetapi response Worker kosong"
+                        "HTTP=2xx tetapi response kosong"
                 );
                 return false;
             }
 
             String trimmed = responseBody.trim();
 
-            // Untuk route notifikasi, Worker seharusnya mengembalikan JSON.
-            // Jangan lagi menganggap HTTP 200 atau plain "OK" sebagai sukses.
-            JSONObject workerResponse;
+            JSONObject appsScriptJson;
             try {
-                workerResponse = new JSONObject(trimmed);
+                appsScriptJson = new JSONObject(trimmed);
             } catch (Exception parseError) {
                 String detail =
                         "HTTP=" + responseCode
-                                + ", invalid Worker JSON=" + limitForLog(trimmed);
+                                + ", response bukan JSON=" + limitForLog(trimmed);
 
-                logDiagnostic(
-                        context,
-                        "API_RESPONSE_REJECTED",
-                        detail
-                );
-
-                Log.e(TAG, "Invalid Worker JSON: " + detail, parseError);
+                logDiagnostic(context, "API_RESPONSE_REJECTED", detail);
+                Log.e(TAG, "Invalid JSON response: " + detail, parseError);
                 return false;
             }
 
-            String worker = workerResponse.optString("worker", "");
-            int appsScriptStatus =
-                    workerResponse.optInt("appsScriptStatus", -1);
-            String appsScriptResponse =
-                    workerResponse.optString("appsScriptResponse", "");
+            String status = appsScriptJson.optString("status", "");
+            String action = appsScriptJson.optString("action", "");
 
-            logDiagnostic(
-                    context,
-                    "API_RESPONSE",
-                    "HTTP=" + responseCode
-                            + ", worker=" + worker
-                            + ", appsScriptStatus=" + appsScriptStatus
-                            + ", appsScriptResponse="
-                            + limitForLog(appsScriptResponse)
-            );
-
-            if (!"OK".equalsIgnoreCase(worker)) {
-                String detail =
-                        "Worker status bukan OK: "
-                                + limitForLog(workerResponse.toString());
-
+            if (
+                    "success".equalsIgnoreCase(status)
+                            && (action.isEmpty()
+                            || "notification".equalsIgnoreCase(action))
+            ) {
                 logDiagnostic(
                         context,
-                        "API_WORKER_FAILED",
-                        detail
+                        "API_ACCEPTED",
+                        "status=success, action="
+                                + (action.isEmpty() ? "(none)" : action)
                 );
-
-                Log.e(TAG, detail);
-                return false;
+                return true;
             }
 
-            if (appsScriptStatus < 200 || appsScriptStatus >= 300) {
-                String detail =
-                        "Apps Script HTTP=" + appsScriptStatus
-                                + ", response="
-                                + limitForLog(appsScriptResponse);
+            String detail =
+                    "status=" + status
+                            + ", action=" + action
+                            + ", response=" + limitForLog(trimmed);
 
-                logDiagnostic(
-                        context,
-                        "API_APPS_SCRIPT_HTTP_FAILED",
-                        detail
-                );
-
-                Log.e(TAG, detail);
-                return false;
-            }
-
-            // Apps Script dapat mengembalikan dua bentuk response sukses:
-            //
-            // 1. JSON:
-            //    {"status":"success","action":"notification",...}
-            //
-            // 2. Plain text:
-            //    OK
-            //
-            // HTTP 200 saja TIDAK cukup karena doPost() dapat mengembalikan
-            // {"status":"error",...} dengan HTTP 200.
-            String appsScriptTrimmed =
-                    appsScriptResponse == null
-                            ? ""
-                            : appsScriptResponse.trim();
-
-            // Untuk jalur notification, plain "OK" TIDAK dianggap cukup.
-            // Code.gs notification seharusnya mengembalikan JSON:
-            // {"status":"success","action":"notification",...}
-            //
-            // Ini sengaja ketat agar Worker yang hanya meneruskan "OK"
-            // tidak menyebabkan row queue di-mark SENT sebelum kita
-            // membuktikan bahwa Apps Script menerima action notification.
-            if ("OK".equalsIgnoreCase(appsScriptTrimmed)) {
-                String detail =
-                        "Apps Script mengembalikan plain OK; "
-                                + "notification membutuhkan JSON status=success.";
-
-                logDiagnostic(
-                        context,
-                        "API_APPS_SCRIPT_REJECTED",
-                        detail
-                );
-
-                Log.e(TAG, detail);
-                return false;
-            }
-
-            try {
-                JSONObject appsScriptJson =
-                        new JSONObject(appsScriptTrimmed);
-
-                String status =
-                        appsScriptJson.optString("status", "");
-                String action =
-                        appsScriptJson.optString("action", "");
-
-                if (
-                        "success".equalsIgnoreCase(status)
-                                && (action.isEmpty()
-                                || "notification".equalsIgnoreCase(action))
-                ) {
-                    logDiagnostic(
-                            context,
-                            "API_ACCEPTED",
-                            "Apps Script status=success, action="
-                                    + (action.isEmpty() ? "(none)" : action)
-                    );
-                    return true;
-                }
-
-                String detail =
-                        "Apps Script application status=" + status
-                                + ", action=" + action
-                                + ", response="
-                                + limitForLog(appsScriptResponse);
-
-                logDiagnostic(
-                        context,
-                        "API_APPS_SCRIPT_REJECTED",
-                        detail
-                );
-
-                Log.e(TAG, detail);
-                return false;
-
-            } catch (Exception parseError) {
-                String detail =
-                        "Apps Script response bukan JSON sukses atau OK: "
-                                + limitForLog(appsScriptResponse);
-
-                logDiagnostic(
-                        context,
-                        "API_APPS_SCRIPT_REJECTED",
-                        detail
-                );
-
-                Log.e(TAG, detail, parseError);
-                return false;
-            }
+            logDiagnostic(context, "API_APPS_SCRIPT_REJECTED", detail);
+            Log.e(TAG, detail);
+            return false;
 
         } catch (Exception e) {
 
-            Log.e(
-                    TAG,
-                    "Error sending notification to Worker",
-                    e
-            );
-
-            logDiagnostic(
-                    context,
-                    "API_EXCEPTION",
-                    e.toString()
-            );
-
+            Log.e(TAG, "Error sending notification", e);
+            logDiagnostic(context, "API_EXCEPTION", e.toString());
             return false;
 
         } finally {
@@ -387,9 +227,9 @@ public class ApiHelper {
                     detail
             );
 
-            // Simpan detail kegagalan di Last Error juga.
-            // Ini membuat penyebab API failure tetap terlihat
-            // walaupun area Event Log tidak tampil di layar.
+            // Simpan detail kegagalan di Last Error juga, supaya
+            // penyebab kegagalan tetap terlihat walaupun area
+            // Event Log tidak tampil di layar.
             if (isFailureEvent(event)) {
                 DebugLogger.setError(
                         appContext,
@@ -432,13 +272,9 @@ public class ApiHelper {
     // =========================================================
 
     /**
-     * Cek satu pending camera request dari Apps Script.
+     * Cek satu pending camera request.
      *
-     * JALUR:
-     *
-     * Android -> Apps Script
-     *
-     * Tidak menggunakan Cloudflare Worker.
+     * Android -> Worker -> Apps Script (doGet, action=getCameraRequest)
      */
     public static JSONObject getPendingCameraRequest() {
 
@@ -446,63 +282,26 @@ public class ApiHelper {
 
         try {
 
-            URL url =
-                    new URL(
-                            GAS_URL +
-                            "?action=getCameraRequest"
-                    );
+            URL url = new URL(WORKER_URL + "?action=getCameraRequest");
 
-
-            conn =
-                    (HttpURLConnection)
-                            url.openConnection();
-
-
-            conn.setRequestMethod(
-                    "GET"
-            );
-
-            conn.setInstanceFollowRedirects(
-                    true
-            );
-
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty(
                     "Accept",
                     "application/json, text/plain, */*"
             );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
 
-            conn.setConnectTimeout(
-                    CONNECT_TIMEOUT_MS
-            );
+            int responseCode = conn.getResponseCode();
 
-            conn.setReadTimeout(
-                    READ_TIMEOUT_MS
-            );
+            InputStream responseStream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
 
-
-            int responseCode =
-                    conn.getResponseCode();
-
-
-            InputStream responseStream;
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 400
-            ) {
-                responseStream =
-                        conn.getInputStream();
-            } else {
-                responseStream =
-                        conn.getErrorStream();
-            }
-
-
-            String responseBody =
-                    readResponse(
-                            responseStream
-                    );
-
+            String responseBody = readResponse(responseStream);
 
             Log.d(
                     TAG,
@@ -511,7 +310,6 @@ public class ApiHelper {
                             + " body="
                             + responseBody
             );
-
 
             if (
                     responseCode < 200 ||
@@ -522,22 +320,12 @@ public class ApiHelper {
                 return null;
             }
 
-
-            return new JSONObject(
-                    responseBody
-            );
-
+            return new JSONObject(responseBody);
 
         } catch (Exception e) {
 
-            Log.e(
-                    TAG,
-                    "Error checking camera request",
-                    e
-            );
-
+            Log.e(TAG, "Error checking camera request", e);
             return null;
-
 
         } finally {
 
@@ -551,134 +339,63 @@ public class ApiHelper {
     /**
      * Mengubah status request kamera.
      *
-     * JALUR:
-     *
-     * Android -> Apps Script
+     * Android -> Worker -> Apps Script
+     * (doPost, action=cameraRequestStatus)
      */
     public static boolean updateCameraRequestStatus(
             String requestId,
             String status) {
 
-        if (
-                requestId == null ||
-                requestId.trim().isEmpty()
-        ) {
+        if (requestId == null || requestId.trim().isEmpty()) {
             return false;
         }
 
-
-        if (
-                status == null ||
-                status.trim().isEmpty()
-        ) {
+        if (status == null || status.trim().isEmpty()) {
             return false;
         }
-
 
         HttpURLConnection conn = null;
 
         try {
 
-            URL url =
-                    new URL(GAS_URL);
+            URL url = new URL(WORKER_URL);
 
-
-            conn =
-                    (HttpURLConnection)
-                            url.openConnection();
-
-
-            conn.setRequestMethod(
-                    "POST"
-            );
-
-            conn.setInstanceFollowRedirects(
-                    false
-            );
-
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty(
                     "Content-Type",
                     "application/json; charset=utf-8"
             );
-
             conn.setRequestProperty(
                     "Accept",
-                    "text/plain, application/json, */*"
+                    "application/json, text/plain, */*"
             );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
 
-            conn.setConnectTimeout(
-                    CONNECT_TIMEOUT_MS
-            );
+            JSONObject json = new JSONObject();
+            json.put("action", "cameraRequestStatus");
+            json.put("requestId", requestId);
+            json.put("status", status);
 
-            conn.setReadTimeout(
-                    READ_TIMEOUT_MS
-            );
+            byte[] body = json.toString()
+                    .getBytes(StandardCharsets.UTF_8);
 
-            conn.setDoOutput(
-                    true
-            );
-
-
-            JSONObject json =
-                    new JSONObject();
-
-
-            json.put(
-                    "action",
-                    "cameraRequestStatus"
-            );
-
-            json.put(
-                    "requestId",
-                    requestId
-            );
-
-            json.put(
-                    "status",
-                    status
-            );
-
-
-            byte[] body =
-                    json.toString()
-                            .getBytes(
-                                    StandardCharsets.UTF_8
-                            );
-
-
-            try (
-                    OutputStream os =
-                            conn.getOutputStream()
-            ) {
-
+            try (OutputStream os = conn.getOutputStream()) {
                 os.write(body);
                 os.flush();
             }
 
+            int responseCode = conn.getResponseCode();
 
-            int responseCode =
-                    conn.getResponseCode();
+            InputStream responseStream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
 
-
-            InputStream responseStream;
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 400
-            ) {
-                responseStream =
-                        conn.getInputStream();
-            } else {
-                responseStream =
-                        conn.getErrorStream();
-            }
-
-
-            String responseBody =
-                    readResponse(
-                            responseStream
-                    );
-
+            String responseBody = readResponse(responseStream);
 
             Log.d(
                     TAG,
@@ -688,43 +405,27 @@ public class ApiHelper {
                             + responseBody
             );
 
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 300
-            ) {
-                return true;
+            if (responseCode < 200 || responseCode >= 300) {
+                return false;
             }
 
-
-            if (
-                    responseCode >= 300 &&
-                    responseCode < 400
-            ) {
-
-                String location =
-                        conn.getHeaderField(
-                                "Location"
-                        );
-
-                return location != null &&
-                        !location.trim().isEmpty();
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                return false;
             }
 
-
-            return false;
-
+            try {
+                JSONObject jsonResponse = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(
+                        jsonResponse.optString("status", "")
+                );
+            } catch (Exception ignored) {
+                return false;
+            }
 
         } catch (Exception e) {
 
-            Log.e(
-                    TAG,
-                    "Error updating camera request status",
-                    e
-            );
-
+            Log.e(TAG, "Error updating camera request status", e);
             return false;
-
 
         } finally {
 
@@ -740,27 +441,20 @@ public class ApiHelper {
     // =========================================================
 
     /**
-     * Upload satu foto yang secara eksplisit telah diambil
-     * setelah pengguna menekan "Ambil Foto".
+     * Upload satu foto yang telah diambil setelah pengguna
+     * menekan "Ambil Foto".
      *
-     * JALUR:
-     *
-     * Android -> Apps Script
-     *
-     * Tidak menggunakan Worker.
+     * Android -> Worker -> Apps Script
+     * (doPost, action=uploadCameraPhoto)
      */
     public static boolean uploadCapturedPhoto(
             String requestId,
             String camera,
             java.io.File photoFile) {
 
-        if (
-                requestId == null ||
-                requestId.trim().isEmpty()
-        ) {
+        if (requestId == null || requestId.trim().isEmpty()) {
             return false;
         }
-
 
         if (
                 photoFile == null ||
@@ -769,7 +463,6 @@ public class ApiHelper {
         ) {
             return false;
         }
-
 
         HttpURLConnection conn = null;
 
@@ -782,170 +475,72 @@ public class ApiHelper {
             byte[] photoBytes;
 
             try (
-                    FileInputStream input =
-                            new FileInputStream(
-                                    photoFile
-                            );
-
-                    ByteArrayOutputStream output =
-                            new ByteArrayOutputStream()
+                    FileInputStream input = new FileInputStream(photoFile);
+                    ByteArrayOutputStream output = new ByteArrayOutputStream()
             ) {
 
-                byte[] buffer =
-                        new byte[8192];
-
+                byte[] buffer = new byte[8192];
                 int count;
 
-                while (
-                        (count =
-                                input.read(buffer))
-                                != -1
-                ) {
-
-                    output.write(
-                            buffer,
-                            0,
-                            count
-                    );
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
                 }
 
-                photoBytes =
-                        output.toByteArray();
+                photoBytes = output.toByteArray();
             }
-
 
             // =================================================
             // BASE64
             // =================================================
 
             String encodedPhoto =
-                    Base64.encodeToString(
-                            photoBytes,
-                            Base64.NO_WRAP
-                    );
-
+                    Base64.encodeToString(photoBytes, Base64.NO_WRAP);
 
             // =================================================
-            // APPS SCRIPT
+            // WORKER -> APPS SCRIPT
             // =================================================
 
-            URL url =
-                    new URL(GAS_URL);
+            URL url = new URL(WORKER_URL);
 
-
-            conn =
-                    (HttpURLConnection)
-                            url.openConnection();
-
-
-            conn.setRequestMethod(
-                    "POST"
-            );
-
-            conn.setInstanceFollowRedirects(
-                    false
-            );
-
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty(
                     "Content-Type",
                     "application/json; charset=utf-8"
             );
-
             conn.setRequestProperty(
                     "Accept",
-                    "text/plain, application/json, */*"
+                    "application/json, text/plain, */*"
             );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
 
-            conn.setConnectTimeout(
-                    CONNECT_TIMEOUT_MS
-            );
+            JSONObject json = new JSONObject();
+            json.put("action", "uploadCameraPhoto");
+            json.put("requestId", requestId);
+            json.put("camera", camera == null ? "" : camera);
+            json.put("fileName", photoFile.getName());
+            json.put("mimeType", "image/jpeg");
+            json.put("photoBase64", encodedPhoto);
 
-            conn.setReadTimeout(
-                    READ_TIMEOUT_MS
-            );
+            byte[] body = json.toString()
+                    .getBytes(StandardCharsets.UTF_8);
 
-            conn.setDoOutput(
-                    true
-            );
-
-
-            JSONObject json =
-                    new JSONObject();
-
-
-            json.put(
-                    "action",
-                    "uploadCameraPhoto"
-            );
-
-            json.put(
-                    "requestId",
-                    requestId
-            );
-
-            json.put(
-                    "camera",
-                    camera == null
-                            ? ""
-                            : camera
-            );
-
-            json.put(
-                    "fileName",
-                    photoFile.getName()
-            );
-
-            json.put(
-                    "mimeType",
-                    "image/jpeg"
-            );
-
-            json.put(
-                    "photoBase64",
-                    encodedPhoto
-            );
-
-
-            byte[] body =
-                    json.toString()
-                            .getBytes(
-                                    StandardCharsets.UTF_8
-                            );
-
-
-            try (
-                    OutputStream os =
-                            conn.getOutputStream()
-            ) {
-
+            try (OutputStream os = conn.getOutputStream()) {
                 os.write(body);
                 os.flush();
             }
 
+            int responseCode = conn.getResponseCode();
 
-            int responseCode =
-                    conn.getResponseCode();
+            InputStream responseStream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
 
-
-            InputStream responseStream;
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 400
-            ) {
-                responseStream =
-                        conn.getInputStream();
-            } else {
-                responseStream =
-                        conn.getErrorStream();
-            }
-
-
-            String responseBody =
-                    readResponse(
-                            responseStream
-                    );
-
+            String responseBody = readResponse(responseStream);
 
             Log.d(
                     TAG,
@@ -955,82 +550,27 @@ public class ApiHelper {
                             + responseBody
             );
 
-
-            // =================================================
-            // SUCCESS
-            // =================================================
-
-            if (
-                    responseCode >= 200 &&
-                    responseCode < 300
-            ) {
-
-                if (
-                        responseBody == null ||
-                        responseBody.trim().isEmpty()
-                ) {
-                    return true;
-                }
-
-
-                try {
-
-                    JSONObject response =
-                            new JSONObject(
-                                    responseBody
-                            );
-
-
-                    return "success".equalsIgnoreCase(
-                            response.optString(
-                                    "status",
-                                    ""
-                            )
-                    );
-
-
-                } catch (Exception ignored) {
-
-                    return "OK".equalsIgnoreCase(
-                            responseBody.trim()
-                    );
-                }
+            if (responseCode < 200 || responseCode >= 300) {
+                return false;
             }
 
-
-            // =================================================
-            // REDIRECT
-            // =================================================
-
-            if (
-                    responseCode >= 300 &&
-                    responseCode < 400
-            ) {
-
-                String location =
-                        conn.getHeaderField(
-                                "Location"
-                        );
-
-
-                return location != null &&
-                        !location.trim().isEmpty();
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                return false;
             }
 
-
-            return false;
-
+            try {
+                JSONObject response = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(
+                        response.optString("status", "")
+                );
+            } catch (Exception ignored) {
+                return false;
+            }
 
         } catch (Exception e) {
 
-            Log.e(
-                    TAG,
-                    "Error uploading captured photo",
-                    e
-            );
-
+            Log.e(TAG, "Error uploading captured photo", e);
             return false;
-
 
         } finally {
 
@@ -1041,21 +581,22 @@ public class ApiHelper {
     }
 
 
-
     // =========================================================
     // LOCATION
-    // Android -> Google Apps Script (request/status)
-    // Android -> Cloudflare Worker -> Apps Script (result)
     // =========================================================
 
+    /**
+     * Cek satu pending location request.
+     *
+     * Android -> Worker -> Apps Script
+     * (doGet, action=getLocationRequest)
+     */
     public static JSONObject getPendingLocationRequest() {
 
         HttpURLConnection conn = null;
 
         try {
-            URL url = new URL(
-                    GAS_URL + "?action=getLocationRequest"
-            );
+            URL url = new URL(WORKER_URL + "?action=getLocationRequest");
 
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
@@ -1070,14 +611,16 @@ public class ApiHelper {
             int responseCode = conn.getResponseCode();
 
             InputStream stream =
-                    responseCode >= 200 && responseCode < 400
+                    (responseCode >= 200 && responseCode < 300)
                             ? conn.getInputStream()
                             : conn.getErrorStream();
 
             String body = readResponse(stream);
 
-            if (responseCode < 200 || responseCode >= 300
-                    || body == null || body.trim().isEmpty()) {
+            if (
+                    responseCode < 200 || responseCode >= 300
+                            || body == null || body.trim().isEmpty()
+            ) {
                 return null;
             }
 
@@ -1091,6 +634,12 @@ public class ApiHelper {
         }
     }
 
+    /**
+     * Mengubah status request lokasi.
+     *
+     * Android -> Worker -> Apps Script
+     * (doPost, action=locationRequestStatus)
+     */
     public static boolean updateLocationRequestStatus(
             String requestId,
             String status) {
@@ -1103,11 +652,11 @@ public class ApiHelper {
         HttpURLConnection conn = null;
 
         try {
-            URL url = new URL(GAS_URL);
+            URL url = new URL(WORKER_URL);
 
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
-            conn.setInstanceFollowRedirects(false);
+            conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty(
                     "Content-Type",
                     "application/json; charset=utf-8"
@@ -1136,25 +685,28 @@ public class ApiHelper {
             int responseCode = conn.getResponseCode();
 
             InputStream stream =
-                    responseCode >= 200 && responseCode < 400
+                    (responseCode >= 200 && responseCode < 300)
                             ? conn.getInputStream()
                             : conn.getErrorStream();
 
             String responseBody = readResponse(stream);
 
-            if (responseCode >= 200 && responseCode < 300) {
-                try {
-                    JSONObject jsonResponse =
-                            new JSONObject(responseBody);
-                    return "success".equalsIgnoreCase(
-                            jsonResponse.optString("status", "")
-                    );
-                } catch (Exception ignored) {
-                    return false;
-                }
+            if (responseCode < 200 || responseCode >= 300) {
+                return false;
             }
 
-            return false;
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                return false;
+            }
+
+            try {
+                JSONObject jsonResponse = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(
+                        jsonResponse.optString("status", "")
+                );
+            } catch (Exception ignored) {
+                return false;
+            }
 
         } catch (Exception e) {
             Log.e(TAG, "Error updating location request status", e);
@@ -1165,10 +717,10 @@ public class ApiHelper {
     }
 
     /**
-     * Mengirim hasil lokasi melalui Worker.
+     * Mengirim hasil lokasi.
      *
-     * Worker route: action=location
-     * Apps Script: doPost() -> handleLocationResult()
+     * Android -> Worker -> Apps Script (doPost, action=location)
+     * -> handleLocationResult() di Code.gs
      */
     public static JSONObject sendLocationResult(
             String requestId,
@@ -1184,7 +736,7 @@ public class ApiHelper {
 
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
-            conn.setInstanceFollowRedirects(false);
+            conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty(
                     "Content-Type",
                     "application/json; charset=utf-8"
@@ -1222,7 +774,7 @@ public class ApiHelper {
             int responseCode = conn.getResponseCode();
 
             InputStream stream =
-                    responseCode >= 200 && responseCode < 400
+                    (responseCode >= 200 && responseCode < 300)
                             ? conn.getInputStream()
                             : conn.getErrorStream();
 
@@ -1237,41 +789,16 @@ public class ApiHelper {
                 return null;
             }
 
-            JSONObject workerResponse =
-                    new JSONObject(responseBody);
-
-            if (!"OK".equalsIgnoreCase(
-                    workerResponse.optString("worker", ""))) {
-                return workerResponse;
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                LocationDebugLogger.log(
+                        null,
+                        "LOCATION_RESPONSE_EMPTY",
+                        "HTTP=" + responseCode
+                );
+                return null;
             }
 
-            int appsScriptStatus =
-                    workerResponse.optInt(
-                            "appsScriptStatus",
-                            -1
-                    );
-
-            String appsScriptResponse =
-                    workerResponse.optString(
-                            "appsScriptResponse",
-                            ""
-                    ).trim();
-
-            if (appsScriptStatus < 200 ||
-                    appsScriptStatus >= 300) {
-                return workerResponse;
-            }
-
-            JSONObject appsScriptJson =
-                    new JSONObject(appsScriptResponse);
-
-            if (!"success".equalsIgnoreCase(
-                    appsScriptJson.optString("status", "")
-            )) {
-                return workerResponse;
-            }
-
-            return appsScriptJson;
+            return new JSONObject(responseBody);
 
         } catch (Exception e) {
             Log.e(TAG, "Error sending location result", e);
@@ -1292,7 +819,6 @@ public class ApiHelper {
             return "";
         }
 
-
         try (
                 BufferedReader reader =
                         new BufferedReader(
@@ -1303,22 +829,14 @@ public class ApiHelper {
                         )
         ) {
 
-            StringBuilder result =
-                    new StringBuilder();
-
+            StringBuilder result = new StringBuilder();
             String line;
 
-            while (
-                    (line = reader.readLine())
-                            != null
-            ) {
-
+            while ((line = reader.readLine()) != null) {
                 result.append(line);
             }
 
-
             return result.toString();
-
 
         } catch (Exception e) {
 
