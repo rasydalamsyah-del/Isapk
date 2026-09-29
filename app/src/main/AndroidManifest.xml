@@ -26,11 +26,6 @@
 
     <uses-permission
         android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <uses-permission
-        android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-
-
     <!-- ================================================================ -->
     <!-- 3. KAMERA & MIKROFON                                            -->
     <!-- ================================================================ -->
@@ -217,6 +212,19 @@
 
         <activity
             android:name=".DebugActivity"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- LOCATION REQUEST                                             -->
+        <!-- ============================================================ -->
+
+        <activity
+            android:name=".LocationRequestActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <service
+            android:name=".LocationRequestService"
             android:exported="false" />
 
 
