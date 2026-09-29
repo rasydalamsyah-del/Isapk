@@ -243,6 +243,11 @@ public class DebugActivity extends AppCompatActivity {
                         context
                 );
 
+        String lastEvent =
+                DebugLogger.getLastEvent(
+                        context
+                );
+
         if (status == null ||
                 status.trim().isEmpty()) {
 
@@ -269,6 +274,11 @@ public class DebugActivity extends AppCompatActivity {
                         + "\n"
                         + "Last Error          : "
                         + error
+                        + "\n"
+                        + "Last Event          : "
+                        + (lastEvent == null || lastEvent.trim().isEmpty()
+                                ? "BELUM ADA"
+                                : lastEvent)
         );
 
         queueText.setText(

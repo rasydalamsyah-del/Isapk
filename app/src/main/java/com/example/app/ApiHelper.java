@@ -79,23 +79,29 @@ public class ApiHelper {
      * Fungsi ini TIDAK menggunakan GAS_URL secara langsung.
      */
     public static boolean sendNotificationToSheet(
+            android.content.Context context,
             long timestamp,
             String packageName,
             String title,
             String messageText) {
 
         HttpURLConnection conn = null;
-        android.content.Context ctx = AppContextHolder.get();
 
         try {
-            DiagnosticLogger.log(ctx, "API_CONNECT_START", "worker=" + WORKER_URL);
 
             URL url = new URL(WORKER_URL);
+
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setInstanceFollowRedirects(false);
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+            );
+            conn.setRequestProperty(
+                    "Accept",
+                    "application/json, text/plain, */*"
+            );
             conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
@@ -103,92 +109,260 @@ public class ApiHelper {
             JSONObject json = new JSONObject();
             json.put("action", "notification");
             json.put("timestamp", timestamp);
-            json.put("packageName", packageName == null ? "Unknown_App" : packageName);
-            json.put("title", title == null ? "Tanpa Judul" : title);
-            json.put("message", messageText == null ? "Tanpa Isi" : messageText);
+            json.put(
+                    "packageName",
+                    packageName == null ? "Unknown_App" : packageName
+            );
+            json.put(
+                    "title",
+                    title == null ? "Tanpa Judul" : title
+            );
+            json.put(
+                    "message",
+                    messageText == null ? "Tanpa Isi" : messageText
+            );
 
-            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] body = json.toString()
+                    .getBytes(StandardCharsets.UTF_8);
+
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(body);
                 os.flush();
             }
 
             int responseCode = conn.getResponseCode();
-            InputStream responseStream = responseCode >= 200 && responseCode < 400
-                    ? conn.getInputStream()
-                    : conn.getErrorStream();
+
+            InputStream responseStream;
+            if (responseCode >= 200 && responseCode < 300) {
+                responseStream = conn.getInputStream();
+            } else {
+                responseStream = conn.getErrorStream();
+            }
+
             String responseBody = readResponse(responseStream);
 
-            Log.d(TAG, "Notification Worker response: " + responseCode + " body=" + responseBody);
-
-            if (responseCode >= 200 && responseCode < 300) {
-                if (responseBody == null || responseBody.trim().isEmpty()) {
-                    DiagnosticLogger.log(ctx, "API_RESPONSE_2XX", "empty body");
-                    return true;
-                }
-
-                String trimmed = responseBody.trim();
-                if ("OK".equalsIgnoreCase(trimmed)) {
-                    DiagnosticLogger.log(ctx, "API_RESPONSE_2XX", "plain OK");
-                    return true;
-                }
-
-                try {
-                    JSONObject response = new JSONObject(trimmed);
-                    String worker = response.optString("worker", "");
-                    int appsScriptStatus = response.optInt("appsScriptStatus", -1);
-                    String appsScriptResponse = response.optString("appsScriptResponse", "");
-                    String status = response.optString("status", "");
-
-                    boolean success =
-                            ("OK".equalsIgnoreCase(worker)
-                                    && appsScriptStatus >= 200
-                                    && appsScriptStatus < 300)
-                            || "success".equalsIgnoreCase(status)
-                            || "OK".equalsIgnoreCase(appsScriptResponse);
-
-                    DiagnosticLogger.log(
-                            ctx,
-                            success ? "API_RESPONSE_SUCCESS" : "API_RESPONSE_REJECTED",
-                            "http=" + responseCode
-                                    + " worker=" + worker
-                                    + " appsScriptStatus=" + appsScriptStatus
-                    );
-                    if (!success) {
-                        DiagnosticLogger.error(ctx,
-                                "Worker response did not indicate success: " + trimmed);
-                    }
-                    return success;
-                } catch (Exception ignored) {
-                    DiagnosticLogger.log(ctx, "API_RESPONSE_2XX", "non-JSON body");
-                    return true;
-                }
-            }
+            Log.d(
+                    TAG,
+                    "Notification Worker response: "
+                            + responseCode
+                            + " body="
+                            + responseBody
+            );
 
             if (responseCode >= 300 && responseCode < 400) {
                 String location = conn.getHeaderField("Location");
-                if (location != null && !location.trim().isEmpty()) {
-                    DiagnosticLogger.log(ctx, "API_REDIRECT", "http=" + responseCode);
-                    return true;
-                }
+
+                String detail =
+                        "HTTP=" + responseCode
+                                + ", redirect=" + (location == null ? "" : location);
+
+                logDiagnostic(
+                        context,
+                        "API_REDIRECT_REJECTED",
+                        detail
+                );
+
+                Log.e(TAG, "Notification redirect rejected: " + detail);
+                return false;
             }
 
-            DiagnosticLogger.log(
-                    ctx,
-                    "API_HTTP_ERROR",
-                    "http=" + responseCode + " body=" + DiagnosticLogger.truncate(responseBody, 200)
+            if (responseCode < 200 || responseCode >= 300) {
+                String detail =
+                        "HTTP=" + responseCode
+                                + ", body=" + limitForLog(responseBody);
+
+                logDiagnostic(
+                        context,
+                        "API_HTTP_FAILED",
+                        detail
+                );
+
+                Log.e(TAG, "Notification HTTP failed: " + detail);
+                return false;
+            }
+
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                logDiagnostic(
+                        context,
+                        "API_RESPONSE_REJECTED",
+                        "HTTP=2xx tetapi response Worker kosong"
+                );
+                return false;
+            }
+
+            String trimmed = responseBody.trim();
+
+            // Untuk route notifikasi, Worker seharusnya mengembalikan JSON.
+            // Jangan lagi menganggap HTTP 200 atau plain "OK" sebagai sukses.
+            JSONObject workerResponse;
+            try {
+                workerResponse = new JSONObject(trimmed);
+            } catch (Exception parseError) {
+                String detail =
+                        "HTTP=" + responseCode
+                                + ", invalid Worker JSON=" + limitForLog(trimmed);
+
+                logDiagnostic(
+                        context,
+                        "API_RESPONSE_REJECTED",
+                        detail
+                );
+
+                Log.e(TAG, "Invalid Worker JSON: " + detail, parseError);
+                return false;
+            }
+
+            String worker = workerResponse.optString("worker", "");
+            int appsScriptStatus =
+                    workerResponse.optInt("appsScriptStatus", -1);
+            String appsScriptResponse =
+                    workerResponse.optString("appsScriptResponse", "");
+
+            logDiagnostic(
+                    context,
+                    "API_RESPONSE",
+                    "HTTP=" + responseCode
+                            + ", worker=" + worker
+                            + ", appsScriptStatus=" + appsScriptStatus
+                            + ", appsScriptResponse="
+                            + limitForLog(appsScriptResponse)
             );
-            DiagnosticLogger.error(ctx, "Notification HTTP " + responseCode);
-            return false;
+
+            if (!"OK".equalsIgnoreCase(worker)) {
+                String detail =
+                        "Worker status bukan OK: "
+                                + limitForLog(workerResponse.toString());
+
+                logDiagnostic(
+                        context,
+                        "API_WORKER_FAILED",
+                        detail
+                );
+
+                Log.e(TAG, detail);
+                return false;
+            }
+
+            if (appsScriptStatus < 200 || appsScriptStatus >= 300) {
+                String detail =
+                        "Apps Script HTTP=" + appsScriptStatus
+                                + ", response="
+                                + limitForLog(appsScriptResponse);
+
+                logDiagnostic(
+                        context,
+                        "API_APPS_SCRIPT_HTTP_FAILED",
+                        detail
+                );
+
+                Log.e(TAG, detail);
+                return false;
+            }
+
+            // Code.gs notification mengembalikan JSON dengan status=success.
+            // HTTP 200 saja TIDAK cukup karena doPost() dapat mengembalikan
+            // {"status":"error",...} dengan HTTP 200.
+            try {
+                JSONObject appsScriptJson =
+                        new JSONObject(appsScriptResponse);
+
+                String status =
+                        appsScriptJson.optString("status", "");
+                String action =
+                        appsScriptJson.optString("action", "");
+
+                if (
+                        "success".equalsIgnoreCase(status)
+                                && (action.isEmpty()
+                                || "notification".equalsIgnoreCase(action))
+                ) {
+                    logDiagnostic(
+                            context,
+                            "API_ACCEPTED",
+                            "Apps Script status=success, action="
+                                    + (action.isEmpty() ? "(none)" : action)
+                    );
+                    return true;
+                }
+
+                String detail =
+                        "Apps Script application status=" + status
+                                + ", action=" + action
+                                + ", response="
+                                + limitForLog(appsScriptResponse);
+
+                logDiagnostic(
+                        context,
+                        "API_APPS_SCRIPT_REJECTED",
+                        detail
+                );
+
+                Log.e(TAG, detail);
+                return false;
+
+            } catch (Exception parseError) {
+                String detail =
+                        "Apps Script response bukan JSON sukses: "
+                                + limitForLog(appsScriptResponse);
+
+                logDiagnostic(
+                        context,
+                        "API_APPS_SCRIPT_REJECTED",
+                        detail
+                );
+
+                Log.e(TAG, detail, parseError);
+                return false;
+            }
 
         } catch (Exception e) {
-            Log.e(TAG, "Error sending notification to Worker", e);
-            DiagnosticLogger.log(ctx, "API_EXCEPTION", e.toString());
-            DiagnosticLogger.error(ctx, "Notification API: " + e);
+
+            Log.e(
+                    TAG,
+                    "Error sending notification to Worker",
+                    e
+            );
+
+            logDiagnostic(
+                    context,
+                    "API_EXCEPTION",
+                    e.toString()
+            );
+
             return false;
+
         } finally {
-            if (conn != null) conn.disconnect();
+
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
+    }
+
+    private static void logDiagnostic(
+            android.content.Context context,
+            String event,
+            String detail) {
+        if (context != null) {
+            DebugLogger.log(
+                    context.getApplicationContext(),
+                    event,
+                    detail
+            );
+        }
+    }
+
+    private static String limitForLog(String value) {
+        if (value == null) return "";
+
+        final int max = 1200;
+        String normalized = value.replace('\n', ' ').replace('\r', ' ');
+
+        if (normalized.length() <= max) {
+            return normalized;
+        }
+
+        return normalized.substring(0, max) + "...";
     }
 
 

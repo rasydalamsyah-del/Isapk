@@ -110,7 +110,7 @@ public final class DebugLogger {
                         KEY_LAST_EVENT,
                         safeEvent
                 )
-                .apply();
+                .commit();
     }
 
     public static synchronized void setStatus(
@@ -131,7 +131,7 @@ public final class DebugLogger {
                                 ? ""
                                 : status
                 )
-                .apply();
+                .commit();
     }
 
     public static synchronized void setError(
@@ -152,7 +152,7 @@ public final class DebugLogger {
                                 ? ""
                                 : error
                 )
-                .apply();
+                .commit();
     }
 
     public static String getLogs(
@@ -231,6 +231,6 @@ public final class DebugLogger {
                 )
                 .edit()
                 .clear()
-                .apply();
+                .commit();
     }
 }
