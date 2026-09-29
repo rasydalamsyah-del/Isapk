@@ -63,6 +63,11 @@ public class DebugActivity extends AppCompatActivity {
                 ScrollingMovementMethod.getInstance()
         );
 
+        // Beri area minimum agar Event Log tetap terlihat
+        // pada berbagai ukuran layar.
+        logText.setMinHeight(dp(240));
+        logText.setTextIsSelectable(true);
+
         Button refreshButton =
                 new Button(this);
 
@@ -172,11 +177,13 @@ public class DebugActivity extends AppCompatActivity {
         ScrollView scrollView =
                 new ScrollView(this);
 
+        scrollView.setFillViewport(false);
+
         scrollView.addView(
                 logText,
                 new ScrollView.LayoutParams(
                         -1,
-                        -1
+                        -2
                 )
         );
 

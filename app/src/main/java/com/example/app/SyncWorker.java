@@ -218,11 +218,9 @@ public class SyncWorker extends Worker {
                                 "API_SEND_FAILED"
                         );
 
-                        DebugLogger.setError(
-                                context,
-                                "ApiHelper returned false; lihat event API_* di Event Log"
-                        );
-
+                        // ApiHelper sudah menyimpan detail penyebab
+                        // kegagalan ke Last Error. Jangan menimpanya
+                        // dengan pesan generik di sini.
                         return Result.retry();
                     }
 

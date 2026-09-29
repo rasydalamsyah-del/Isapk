@@ -344,12 +344,39 @@ public class ApiHelper {
             String event,
             String detail) {
         if (context != null) {
+            android.content.Context appContext =
+                    context.getApplicationContext();
+
             DebugLogger.log(
-                    context.getApplicationContext(),
+                    appContext,
                     event,
                     detail
             );
+
+            // Simpan detail kegagalan di Last Error juga.
+            // Ini membuat penyebab API failure tetap terlihat
+            // walaupun area Event Log tidak tampil di layar.
+            if (isFailureEvent(event)) {
+                DebugLogger.setError(
+                        appContext,
+                        event + ": " + detail
+                );
+            } else if ("API_ACCEPTED".equals(event)) {
+                DebugLogger.setError(
+                        appContext,
+                        "Tidak ada"
+                );
+            }
         }
+    }
+
+    private static boolean isFailureEvent(String event) {
+        if (event == null) return false;
+
+        return event.contains("FAILED")
+                || event.contains("REJECTED")
+                || event.contains("EXCEPTION")
+                || event.contains("REDIRECT");
     }
 
     private static String limitForLog(String value) {
