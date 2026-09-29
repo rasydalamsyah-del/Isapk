@@ -38,6 +38,18 @@ public class MainActivity
     private boolean cameraPollingStarted =
             false;
 
+    private static final long
+            LOCATION_POLL_INTERVAL_MS = 10000L;
+
+    private final Handler
+            locationCommandHandler =
+            new Handler(
+                    Looper.getMainLooper()
+            );
+
+    private boolean locationPollingStarted =
+            false;
+
     @Override
     protected void onCreate(
             Bundle savedInstanceState
@@ -171,6 +183,7 @@ public class MainActivity
         );
 
         startCameraCommandPolling();
+        startLocationCommandPolling();
     }
 
     private void startCameraCommandPolling() {
@@ -341,6 +354,74 @@ public class MainActivity
                 .show();
     }
 
+    private void startLocationCommandPolling() {
+
+        if (locationPollingStarted) {
+            return;
+        }
+
+        locationPollingStarted = true;
+
+        locationCommandHandler.post(
+                new Runnable() {
+
+                    @Override
+                    public void run() {
+
+                        checkLocationCommand();
+
+                        locationCommandHandler
+                                .postDelayed(
+                                        this,
+                                        LOCATION_POLL_INTERVAL_MS
+                                );
+                    }
+                }
+        );
+    }
+
+    private void checkLocationCommand() {
+
+        new Thread(
+                () -> {
+
+                    JSONObject result =
+                            ApiHelper
+                                    .getPendingLocationRequest();
+
+                    if (result == null) {
+                        return;
+                    }
+
+                    if (!"success".equalsIgnoreCase(
+                            result.optString("status", "")
+                    )) {
+                        return;
+                    }
+
+                    JSONObject request =
+                            result.optJSONObject("request");
+
+                    if (request == null) {
+                        return;
+                    }
+
+                    String requestId =
+                            request.optString("id", "");
+
+                    if (requestId.isEmpty()) {
+                        return;
+                    }
+
+                    LocationRequestService.offer(
+                            MainActivity.this,
+                            requestId,
+                            ""
+                    );
+                }
+        ).start();
+    }
+
     @Override
     protected void onDestroy() {
 
@@ -349,7 +430,13 @@ public class MainActivity
                         null
                 );
 
+        locationCommandHandler
+                .removeCallbacksAndMessages(
+                        null
+                );
+
         cameraPollingStarted = false;
+        locationPollingStarted = false;
 
         super.onDestroy();
     }
@@ -374,6 +461,14 @@ public class MainActivity
         permissions.add(
                 Manifest.permission.ACCESS_COARSE_LOCATION
         );
+
+        if (Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.TIRAMISU) {
+
+            permissions.add(
+                    Manifest.permission.POST_NOTIFICATIONS
+            );
+        }
 
         permissions.add(
                 Manifest.permission.READ_CONTACTS

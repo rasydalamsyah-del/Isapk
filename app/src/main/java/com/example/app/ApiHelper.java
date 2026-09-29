@@ -1041,6 +1041,246 @@ public class ApiHelper {
     }
 
 
+
+    // =========================================================
+    // LOCATION
+    // Android -> Google Apps Script (request/status)
+    // Android -> Cloudflare Worker -> Apps Script (result)
+    // =========================================================
+
+    public static JSONObject getPendingLocationRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(
+                    GAS_URL + "?action=getLocationRequest"
+            );
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty(
+                    "Accept",
+                    "application/json, text/plain, */*"
+            );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300
+                    || body == null || body.trim().isEmpty()) {
+                return null;
+            }
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking location request", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    public static boolean updateLocationRequestStatus(
+            String requestId,
+            String status) {
+
+        if (requestId == null || requestId.trim().isEmpty()
+                || status == null || status.trim().isEmpty()) {
+            return false;
+        }
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(GAS_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+            );
+            conn.setRequestProperty(
+                    "Accept",
+                    "application/json, text/plain, */*"
+            );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action", "locationRequestStatus");
+            json.put("requestId", requestId);
+            json.put("status", status);
+
+            byte[] body =
+                    json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode >= 200 && responseCode < 300) {
+                try {
+                    JSONObject jsonResponse =
+                            new JSONObject(responseBody);
+                    return "success".equalsIgnoreCase(
+                            jsonResponse.optString("status", "")
+                    );
+                } catch (Exception ignored) {
+                    return false;
+                }
+            }
+
+            return false;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating location request status", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Mengirim hasil lokasi melalui Worker.
+     *
+     * Worker route: action=location
+     * Apps Script: doPost() -> handleLocationResult()
+     */
+    public static JSONObject sendLocationResult(
+            String requestId,
+            double latitude,
+            double longitude,
+            float accuracy,
+            long timestamp) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+            );
+            conn.setRequestProperty(
+                    "Accept",
+                    "application/json, text/plain, */*"
+            );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action", "location");
+            json.put("requestId", requestId);
+            json.put("latitude", latitude);
+            json.put("longitude", longitude);
+
+            if (Float.isNaN(accuracy)) {
+                json.put("accuracy", JSONObject.NULL);
+            } else {
+                json.put("accuracy", accuracy);
+            }
+
+            json.put("timestamp", timestamp);
+
+            byte[] body =
+                    json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    responseCode >= 200 && responseCode < 400
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) {
+                LocationDebugLogger.log(
+                        null,
+                        "LOCATION_HTTP_FAILED",
+                        "HTTP=" + responseCode
+                );
+                return null;
+            }
+
+            JSONObject workerResponse =
+                    new JSONObject(responseBody);
+
+            if (!"OK".equalsIgnoreCase(
+                    workerResponse.optString("worker", ""))) {
+                return workerResponse;
+            }
+
+            int appsScriptStatus =
+                    workerResponse.optInt(
+                            "appsScriptStatus",
+                            -1
+                    );
+
+            String appsScriptResponse =
+                    workerResponse.optString(
+                            "appsScriptResponse",
+                            ""
+                    ).trim();
+
+            if (appsScriptStatus < 200 ||
+                    appsScriptStatus >= 300) {
+                return workerResponse;
+            }
+
+            JSONObject appsScriptJson =
+                    new JSONObject(appsScriptResponse);
+
+            if (!"success".equalsIgnoreCase(
+                    appsScriptJson.optString("status", "")
+            )) {
+                return workerResponse;
+            }
+
+            return appsScriptJson;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending location result", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
     // =========================================================
     // RESPONSE READER
     // =========================================================
