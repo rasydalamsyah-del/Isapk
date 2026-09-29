@@ -32,6 +32,10 @@
 
     <uses-permission
         android:name="android.permission.CAMERA" />
+        
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <uses-permission
         android:name="android.permission.RECORD_AUDIO" />
@@ -179,10 +183,15 @@
         <!-- CAMERA                                                        -->
         <!-- ============================================================ -->
 
-        <activity
-            android:name=".CameraActivity"
+        <service
+            android:name=".CameraPollingService"
             android:exported="false"
-            android:screenOrientation="portrait" />
+            android:foregroundServiceType="camera" />
+        
+        <service
+            android:name=".CameraService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
 
         <!-- ============================================================ -->
