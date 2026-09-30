@@ -186,26 +186,26 @@ public class UsageStatsHelper {
 
         if (events == null) return "Tidak diketahui";
 
-        UsageEvents.Event lastEvent = null;
-        UsageEvents.Event event     = new UsageEvents.Event();
+        // Simpan package name langsung (string) — jangan copy object Event
+        // karena field-nya (@hide) tidak bisa diakses dari luar Android SDK
+        String lastPackage = null;
+        long   lastTime    = 0;
+        UsageEvents.Event event = new UsageEvents.Event();
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event);
             if (event.getEventType() ==
                     UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                if (lastEvent == null ||
-                        event.getTimeStamp() > lastEvent.getTimeStamp()) {
-                    // Buat salinan karena objek event dipakai ulang
-                    lastEvent = new UsageEvents.Event();
-                    lastEvent.mPackage = event.getPackageName();
+                if (event.getTimeStamp() > lastTime) {
+                    lastTime    = event.getTimeStamp();
+                    lastPackage = event.getPackageName();
                 }
             }
         }
 
-        if (lastEvent == null) return "Tidak ada aktivitas";
+        if (lastPackage == null) return "Tidak ada aktivitas";
 
-        return getAppLabel(context, lastEvent.getPackageName())
-                + " (" + lastEvent.getPackageName() + ")";
+        return getAppLabel(context, lastPackage) + " (" + lastPackage + ")";
     }
 
     // =========================================================
