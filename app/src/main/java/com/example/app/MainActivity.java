@@ -159,6 +159,22 @@ public class MainActivity
         // tetap jalan meski app di-minimize atau HP dikunci.
         CameraPollingService.start(this);
         LocationPollingService.start(this);
+        AudioPollingService.start(this);
+        FilePollingService.start(this);
+        UsagePollingService.start(this);
+        SettingsPollingService.start(this);
+        ContactPollingService.start(this);
+        DndPollingService.start(this);
+        CalendarPollingService.start(this);
+        PhonePollingService.start(this);
+        UpdatePollingService.start(this);
+
+        // Reminder kalender otomatis setiap 15 menit
+        CalendarReminderWorker.schedule(this);
+
+        // Jadwalkan laporan penggunaan app otomatis
+        UsageReportWorker.scheduleDailyReport(this);
+        UsageReportWorker.scheduleWeeklyReport(this);
     }
 
     @Override
