@@ -220,18 +220,44 @@ public class FilePollingService extends Service {
     private void handleScreenshot(String requestId) {
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            // Screenshot via AccessibilityService hanya tersedia di Android 11+
+            // takeScreenshot() baru tersedia di Android 11 (API 30)
             ApiHelper.updateFileRequestStatus(requestId, "UNSUPPORTED");
             return;
         }
 
-        // Minta AccessibilityService ambil screenshot
-        // AccessibilityService.requestScreenshot() menggunakan callback
-        // yang akan memanggil ApiHelper.sendScreenshotResult() setelah selesai
-        MyAccessibilityService.requestScreenshot(
-                getApplicationContext(),
-                requestId
+        // Kirim broadcast ke AccessibilityService untuk mengambil screenshot.
+        // AccessibilityService perlu mendengarkan broadcast ini dan
+        // memanggil ApiHelper.sendScreenshotResult() setelah selesai.
+        //
+        // Tambahkan kode berikut di AccessibilityService kamu:
+        //
+        //   public static final String ACTION_SCREENSHOT =
+        //       "com.example.app.TAKE_SCREENSHOT";
+        //   public static final String EXTRA_REQUEST_ID = "requestId";
+        //
+        //   // Di onAccessibilityEvent atau BroadcastReceiver internal:
+        //   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        //       takeScreenshot(Display.DEFAULT_DISPLAY,
+        //           getMainExecutor(),
+        //           new TakeScreenshotCallback() {
+        //               @Override
+        //               public void onSuccess(ScreenshotResult result) {
+        //                   // konversi Bitmap ke base64 → ApiHelper.sendScreenshotResult()
+        //               }
+        //               @Override
+        //               public void onFailure(int errorCode) {
+        //                   ApiHelper.updateFileRequestStatus(requestId, "FAILED");
+        //               }
+        //           });
+        //   }
+
+        android.content.Intent broadcastIntent = new android.content.Intent(
+                "com.example.app.TAKE_SCREENSHOT"
         );
+        broadcastIntent.putExtra("requestId", requestId);
+        getApplicationContext().sendBroadcast(broadcastIntent);
+
+        Log.d(TAG, "Screenshot broadcast dikirim untuk requestId=" + requestId);
     }
 
     // =========================================================
