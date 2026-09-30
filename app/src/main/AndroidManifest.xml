@@ -229,10 +229,6 @@
         <!-- ============================================================ -->
 
         <service
-            android:name=".LocationRequestService"
-            android:exported="false" />
-            
-        <service
             android:name=".LocationPollingService"
             android:exported="false"
             android:foregroundServiceType="location"/>            
