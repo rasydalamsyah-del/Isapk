@@ -16,6 +16,7 @@
     <uses-permission
         android:name="android.permission.WAKE_LOCK" />
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
 
     <!-- ================================================================ -->
     <!-- 2. LOKASI                                                       -->
@@ -227,14 +228,14 @@
         <!-- LOCATION REQUEST                                             -->
         <!-- ============================================================ -->
 
-        <activity
-            android:name=".LocationRequestActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
         <service
             android:name=".LocationRequestService"
             android:exported="false" />
+            
+        <service
+            android:name=".LocationPollingService"
+            android:exported="false"
+            android:foregroundServiceType="location"/>            
 
 
         <!-- ============================================================ -->
