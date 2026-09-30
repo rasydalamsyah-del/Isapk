@@ -142,8 +142,20 @@ public class LocationPollingService extends Service {
 
                 Log.d(TAG, "Location request ditemukan: " + requestId);
 
+                // Simpan requestId ke database lokal HP
+                LocationRequestDatabase.saveRequest(
+                        getApplicationContext(),
+                        requestId,
+                        ""
+                );
+
                 isCapturing = true;
-                handleLocationRequest(requestId);
+
+                // WAJIB jalan di Main thread:
+                // LocationHelper pakai LocationManager.requestLocationUpdates()
+                // dengan Looper.getMainLooper() — harus dipanggil dari Main thread
+                // supaya callback GPS bisa terpicu.
+                pollHandler.post(() -> handleLocationRequest(requestId));
 
             } catch (Exception e) {
                 Log.e(TAG, "Error polling", e);
@@ -209,11 +221,10 @@ public class LocationPollingService extends Service {
                 "requestId=" + requestId
         );
 
-        // Ambil GPS satu kali — callback jalan di main thread
-        pollHandler.post(() ->
-                LocationHelper.getSingleLocation(
-                        getApplicationContext(),
-                        new LocationHelper.Callback() {
+        // Ambil GPS satu kali — sudah di Main thread, callback langsung terpicu
+        LocationHelper.getSingleLocation(
+                getApplicationContext(),
+                new LocationHelper.Callback() {
 
                             @Override
                             public void onSuccess(LocationResult locationResult) {
@@ -273,8 +284,7 @@ public class LocationPollingService extends Service {
                                 scheduleNextPoll(POLL_INTERVAL_MS);
                             }
                         }
-                )
-        );
+                );
     }
 
     // =========================================================
