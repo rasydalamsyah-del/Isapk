@@ -25,22 +25,27 @@ import java.util.List;
 /**
  * Helper untuk semua operasi file dan media di penyimpanan HP.
  *
- * Operasi yang didukung:
- * - getLatestPhoto()   — foto terbaru dari MediaStore
- * - getLatestVideo()   — video terbaru dari MediaStore
- * - listFiles(path)    — daftar file di folder tertentu
- * - searchFiles(query) — cari file berdasarkan nama
- * - readFileToBase64() — baca file dan encode ke base64
+ * Batas file:
+ * - File ≤ 5 MB   : dikirim sekaligus (single request ke GAS)
+ * - File > 5 MB   : dipecah jadi chunk 5 MB, dikirim bertahap
+ * - File > 50 MB  : ditolak (batas Telegram Bot API)
  *
- * Batas ukuran file: MAX_FILE_SIZE_BYTES (5 MB default).
- * File di atas batas hanya dikirim infonya (nama, ukuran, path).
+ * FilePollingService yang memutuskan mode mana berdasarkan
+ * FileResult.isChunked dan FileResult.totalChunks.
  */
 public class FileHelper {
 
     private static final String TAG = "FileHelper";
 
-    // Maksimum ukuran file yang dikirim sebagai base64 (5 MB)
-    public static final long MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024L;
+    // Ukuran per chunk saat kirim file besar (5 MB raw = ~6.7 MB base64)
+    // Masih dalam batas GAS UrlFetch ~10 MB per request
+    public static final int  CHUNK_SIZE_BYTES    = 5 * 1024 * 1024;
+
+    // File di atas 50 MB ditolak (batas Telegram Bot API)
+    public static final long MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024L;
+
+    // File <= batas ini dikirim sekaligus (single chunk)
+    public static final long SINGLE_SEND_LIMIT   = CHUNK_SIZE_BYTES;
 
     // =========================================================
     // INNER CLASS — HASIL OPERASI FILE
@@ -52,19 +57,24 @@ public class FileHelper {
         public final String  path;
         public final long    size;
         public final String  mimeType;
-        public final String  base64;    // null jika file terlalu besar
-        public final boolean tooBig;
+        public final String  base64;       // isi file (single send, ≤5 MB)
+        public final boolean tooBig;       // true jika > 50 MB (ditolak)
+        public final boolean isChunked;    // true jika perlu chunked send
+        public final int     totalChunks;  // jumlah chunk kalau isChunked
 
         public FileResult(
                 boolean hasFile, String name, String path,
-                long size, String mimeType, String base64) {
-            this.hasFile  = hasFile;
-            this.name     = name;
-            this.path     = path;
-            this.size     = size;
-            this.mimeType = mimeType;
-            this.base64   = base64;
-            this.tooBig   = (base64 == null && hasFile);
+                long size, String mimeType, String base64,
+                boolean isChunked, int totalChunks) {
+            this.hasFile     = hasFile;
+            this.name        = name;
+            this.path        = path;
+            this.size        = size;
+            this.mimeType    = mimeType;
+            this.base64      = base64;
+            this.tooBig      = (base64 == null && hasFile && !isChunked);
+            this.isChunked   = isChunked;
+            this.totalChunks = totalChunks;
         }
 
         public String sizeLabel() {
@@ -318,13 +328,73 @@ public class FileHelper {
     private static FileResult buildFileResult(
             String path, String name, long size, String mimeType) {
 
+        // Tolak file > 50 MB (batas Telegram)
         if (size > MAX_FILE_SIZE_BYTES) {
-            // File terlalu besar — kirim info saja, tanpa base64
-            return new FileResult(true, name, path, size, mimeType, null);
+            return new FileResult(true, name, path, size, mimeType,
+                    null, false, 0);
         }
 
-        String base64 = readToBase64(path);
-        return new FileResult(true, name, path, size, mimeType, base64);
+        // File ≤ 5 MB → kirim sekaligus
+        if (size <= SINGLE_SEND_LIMIT) {
+            String base64 = readToBase64(path);
+            return new FileResult(true, name, path, size, mimeType,
+                    base64, false, 0);
+        }
+
+        // File > 5 MB → mode chunked (FilePollingService yang kirim chunk)
+        int totalChunks = (int) Math.ceil((double) size / CHUNK_SIZE_BYTES);
+        return new FileResult(true, name, path, size, mimeType,
+                null, true, totalChunks);
+    }
+
+    // =========================================================
+    // BACA CHUNK (untuk chunked upload)
+    // =========================================================
+
+    /**
+     * Baca satu chunk dari file, encode ke base64.
+     * chunkIndex mulai dari 0.
+     * Return null kalau gagal atau index di luar range.
+     */
+    public static String readChunkToBase64(String path, int chunkIndex) {
+
+        File file = new File(path);
+        if (!file.exists()) return null;
+
+        long offset = (long) chunkIndex * CHUNK_SIZE_BYTES;
+        if (offset >= file.length()) return null;
+
+        int chunkSize = (int) Math.min(
+                CHUNK_SIZE_BYTES,
+                file.length() - offset
+        );
+
+        try (FileInputStream fis = new FileInputStream(file)) {
+
+            long skipped = fis.skip(offset);
+            if (skipped != offset) return null;
+
+            byte[] buffer = new byte[chunkSize];
+            int    read   = 0;
+            int    count;
+
+            while (read < chunkSize &&
+                    (count = fis.read(buffer, read, chunkSize - read)) != -1) {
+                read += count;
+            }
+
+            if (read == 0) return null;
+
+            byte[] data = read < chunkSize
+                    ? java.util.Arrays.copyOf(buffer, read)
+                    : buffer;
+
+            return Base64.encodeToString(data, Base64.NO_WRAP);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error readChunkToBase64 chunk=" + chunkIndex, e);
+            return null;
+        }
     }
 
     private static boolean hasMediaPermission(Context context, boolean isImage) {

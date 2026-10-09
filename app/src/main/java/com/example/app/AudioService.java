@@ -60,7 +60,7 @@ public class AudioService extends Service {
     public static final String MODE_CALL   = "call";
 
     private static final int DEFAULT_DURATION_SEC = 30;
-    private static final int MAX_DURATION_SEC     = 300; // 5 menit
+    private static final int MAX_DURATION_SEC     = 3600; // 1 jam
 
     private MediaRecorder mediaRecorder;
     private File          audioFile;

