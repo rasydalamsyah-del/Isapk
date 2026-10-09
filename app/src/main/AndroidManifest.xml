@@ -295,6 +295,15 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".SimStateReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SIM_STATE_CHANGED"/>
+                <action android:name="android.telephony.action.SIM_CARD_STATE_CHANGED"/>
+            </intent-filter>
+        </receiver>
+
         <!-- ============================================================ -->
         <!-- NOTIFICATION LISTENER                                         -->
         <!-- ============================================================ -->
