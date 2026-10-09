@@ -24,6 +24,8 @@ import android.util.Log;
 public class SimStateReceiver extends BroadcastReceiver {
 
     private static final String TAG = "SimStateReceiver";
+    private static final String ACTION_SIM_CARD_STATE_CHANGED = "android.telephony.action.SIM_CARD_STATE_CHANGED";
+    private static final String EXTRA_SIM_STATE = "android.telephony.extra.SIM_STATE";
 
     // Key SharedPreferences untuk track state SIM sebelumnya
     private static final String PREFS_NAME    = "sim_monitor_prefs";
@@ -32,7 +34,7 @@ public class SimStateReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
 
-        if (!TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED.equals(
+        if (!ACTION_SIM_CARD_STATE_CHANGED.equals(
                 intent.getAction()) &&
             !"android.intent.action.SIM_STATE_CHANGED".equals(
                 intent.getAction())) {
@@ -40,7 +42,7 @@ public class SimStateReceiver extends BroadcastReceiver {
         }
 
         String simState = intent.getStringExtra(
-                TelephonyManager.EXTRA_SIM_STATE
+                EXTRA_SIM_STATE
         );
 
         if (simState == null) {

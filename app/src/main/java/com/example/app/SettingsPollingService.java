@@ -360,8 +360,7 @@ public class SettingsPollingService extends Service {
                     return "✅ Terpasang & Aktif";
                 case android.telephony.TelephonyManager.SIM_STATE_ABSENT:
                     return "❌ Tidak ada SIM";
-                case android.telephony.TelephonyManager.SIM_STATE_LOCKED:
-                    return "🔒 SIM Terkunci";
+                // SIM_STATE_LOCKED tidak tersedia di public API, diabaikan
                 case android.telephony.TelephonyManager.SIM_STATE_PIN_REQUIRED:
                     return "🔒 Butuh PIN";
                 case android.telephony.TelephonyManager.SIM_STATE_PUK_REQUIRED:

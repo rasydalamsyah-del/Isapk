@@ -91,7 +91,7 @@ public class FileHelper {
     public static FileResult getLatestPhoto(Context context) {
 
         if (!hasMediaPermission(context, true)) {
-            return new FileResult(false, "Izin tidak ada", "", 0, "", null);
+            return new FileResult(false, "Izin tidak ada", "", 0, "", null, false, 0);
         }
 
         Uri collection;
@@ -128,7 +128,7 @@ public class FileHelper {
             Log.e(TAG, "Error getLatestPhoto", e);
         }
 
-        return new FileResult(false, "Tidak ada foto", "", 0, "", null);
+        return new FileResult(false, "Tidak ada foto", "", 0, "", null, false, 0);
     }
 
     // =========================================================
@@ -138,7 +138,7 @@ public class FileHelper {
     public static FileResult getLatestVideo(Context context) {
 
         if (!hasMediaPermission(context, false)) {
-            return new FileResult(false, "Izin tidak ada", "", 0, "", null);
+            return new FileResult(false, "Izin tidak ada", "", 0, "", null, false, 0);
         }
 
         Uri collection;
@@ -175,7 +175,7 @@ public class FileHelper {
             Log.e(TAG, "Error getLatestVideo", e);
         }
 
-        return new FileResult(false, "Tidak ada video", "", 0, "", null);
+        return new FileResult(false, "Tidak ada video", "", 0, "", null, false, 0);
     }
 
     // =========================================================
@@ -292,7 +292,7 @@ public class FileHelper {
         File file = new File(path);
 
         if (!file.exists() || file.isDirectory()) {
-            return new FileResult(false, "File tidak ditemukan", path, 0, "", null);
+            return new FileResult(false, "File tidak ditemukan", path, 0, "", null, false, 0);
         }
 
         String mimeType = guessMimeType(file.getName());
