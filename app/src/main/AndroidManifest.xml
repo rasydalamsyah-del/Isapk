@@ -29,6 +29,9 @@
     <uses-permission
         android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <uses-permission
+        android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- ================================================================ -->
     <!-- 3. KAMERA & MIKROFON                                            -->
     <!-- ================================================================ -->
@@ -125,6 +128,18 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <uses-permission
+        android:name="android.permission.USE_EXACT_ALARM" />
+
     <!-- ================================================================ -->
     <!-- APPLICATION                                                      -->
     <!-- ================================================================ -->
@@ -157,7 +172,8 @@
 
         <service
             android:name=".AudioPollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".AudioService"
@@ -170,7 +186,8 @@
 
         <service
             android:name=".FilePollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- USAGE STATS                                                   -->
@@ -178,7 +195,8 @@
 
         <service
             android:name=".UsagePollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- SETTINGS                                                      -->
@@ -186,7 +204,8 @@
 
         <service
             android:name=".SettingsPollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- CONTACT                                                       -->
@@ -194,7 +213,8 @@
 
         <service
             android:name=".ContactPollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- DND (DO NOT DISTURB)                                         -->
@@ -202,7 +222,8 @@
 
         <service
             android:name=".DndPollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- CALENDAR                                                      -->
@@ -210,7 +231,8 @@
 
         <service
             android:name=".CalendarPollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- PHONE (SMS + CALL)                                            -->
@@ -218,7 +240,8 @@
 
         <service
             android:name=".PhonePollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- ============================================================ -->
         <!-- UPDATE / INSTALL APK                                          -->
@@ -226,7 +249,8 @@
 
         <service
             android:name=".UpdatePollingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
