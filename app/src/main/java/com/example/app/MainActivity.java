@@ -20,6 +20,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int RUNTIME_PERMISSION_CODE = 100;
     private static final int DEVICE_ADMIN_CODE = 101;
+    private static final int BACKGROUND_LOCATION_CODE = 102;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,6 +70,43 @@ public class MainActivity extends AppCompatActivity {
 
         findViewById(R.id.btnIgnoreBattery).setOnClickListener(
                 v -> PermissionHelper.requestIgnoreBatteryOptimizations(this)
+        );
+
+        findViewById(R.id.btnBackgroundLocation).setOnClickListener(
+                v -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        if (PermissionHelper.hasBackgroundLocationPermission(this)) {
+                            Toast.makeText(this,
+                                    "Izin lokasi background sudah diberikan",
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+                            PermissionHelper.requestBackgroundLocation(
+                                    this, BACKGROUND_LOCATION_CODE);
+                        }
+                    } else {
+                        Toast.makeText(this,
+                                "Tidak diperlukan untuk Android versi ini",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }
+        );
+
+        findViewById(R.id.btnExactAlarm).setOnClickListener(
+                v -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (PermissionHelper.canScheduleExactAlarms(this)) {
+                            Toast.makeText(this,
+                                    "Izin exact alarm sudah diberikan",
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+                            PermissionHelper.openExactAlarmSettings(this);
+                        }
+                    } else {
+                        Toast.makeText(this,
+                                "Tidak diperlukan untuk Android versi ini",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }
         );
 
         // Hanya start service kalau permission kamera sudah diberikan
@@ -174,6 +212,21 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode,
             String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == BACKGROUND_LOCATION_CODE) {
+            if (grantResults.length > 0 &&
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this,
+                        "✅ Izin lokasi background diberikan",
+                        Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this,
+                        "⚠️ Izin lokasi background ditolak. " +
+                        "Fitur lokasi di background tidak akan berfungsi.",
+                        Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
 
         if (requestCode == RUNTIME_PERMISSION_CODE) {
             // Hitung berapa yang di-grant

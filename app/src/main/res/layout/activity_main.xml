@@ -71,5 +71,17 @@
             android:layout_height="wrap_content"
             android:text="9. Abaikan Optimasi Baterai"/>
 
+        <Button
+            android:id="@+id/btnBackgroundLocation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="10. Izin Lokasi Background (Android 10+)"/>
+
+        <Button
+            android:id="@+id/btnExactAlarm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="11. Izin Exact Alarm (Android 12+)"/>
+
     </LinearLayout>
 </ScrollView>
