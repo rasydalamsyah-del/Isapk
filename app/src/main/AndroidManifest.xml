@@ -283,6 +283,18 @@
         </activity>
 
         <!-- ============================================================ -->
+        <!-- TRANSPARENT CAMERA ACTIVITY (Android 12+)                     -->
+        <!-- ============================================================ -->
+
+        <activity
+            android:name=".TransparentCameraActivity"
+            android:exported="false"
+            android:theme="@style/TransparentTheme"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:noHistory="true" />
+
+        <!-- ============================================================ -->
         <!-- DIAGNOSTIC ACTIVITY                                           -->
         <!-- ============================================================ -->
 
